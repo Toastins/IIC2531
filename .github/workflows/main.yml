@@ -1,0 +1,38 @@
+name: Build PDFs from Labs Markdown
+
+on:
+  push:
+    paths:
+      - "2026-1/Labs/**/*.md"
+      - ".github/workflows/md-to-pdf.yml"
+  workflow_dispatch:
+
+jobs:
+  build-pdfs:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v5
+
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive-xetex
+
+      - name: Convert Labs Markdown files to PDF
+        run: |
+          find ./2026-1/Labs -type f -name "*.md" -print0 |
+          while IFS= read -r -d '' file; do
+            pdf="${file%.md}.pdf"
+            echo "Converting: $file -> $pdf"
+            pandoc "$file" -o "$pdf" \
+              --pdf-engine=xelatex \
+              -V geometry:margin=0.5in
+          done
+
+      - name: Upload generated PDFs
+        uses: actions/upload-artifact@v4
+        with:
+          name: labs-pdfs
+          path: 2026-1/Labs/**/*.pdf
