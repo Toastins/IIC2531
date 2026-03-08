@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - "2026-1/Labs/**/*.md"
-      - ".github/workflows/md-to-pdf.yml"
+      - ".github/workflows/main.yml"
   workflow_dispatch:
 
 jobs:
@@ -24,11 +24,25 @@ jobs:
         run: |
           find ./2026-1/Labs -type f -name "*.md" -print0 |
           while IFS= read -r -d '' file; do
-            pdf="${file%.md}.pdf"
-            echo "Converting: $file -> $pdf"
-            pandoc "$file" -o "$pdf" \
-              --pdf-engine=xelatex \
-              -V geometry:margin=0.5in
+            dir="$(dirname "$file")"
+            base="$(basename "$file" .md)"
+
+            if [ ! -s "$file" ]; then
+              echo "Skipping empty file: $file"
+              continue
+            fi
+
+            echo "Converting: $file"
+
+            (
+              cd "$dir"
+              pandoc "$base.md" -o "$base.pdf" \
+                --pdf-engine=xelatex \
+                -V geometry:margin=0.5in
+            ) || {
+              echo "Skipping failed conversion: $file"
+              rm -f "$dir/$base.pdf"
+            }
           done
 
       - name: Upload generated PDFs
@@ -36,3 +50,4 @@ jobs:
         with:
           name: labs-pdfs
           path: 2026-1/Labs/**/*.pdf
+          if-no-files-found: warn
