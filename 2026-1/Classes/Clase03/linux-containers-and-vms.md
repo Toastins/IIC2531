@@ -478,3 +478,35 @@ lxc.seccomp.profile = /etc/lxc/seccomp
 * **Resultado:** Contenedor altamente aislado y limitado
 * Si se compromete → daño contenido
 
+
+---
+
+# Próxima clase
+
+<style scoped>
+  section {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  h1 {
+    margin-bottom: 30px;
+  }
+  .comparison {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+    font-size: 72px;
+    font-weight: bold;
+  }
+</style>
+
+<div class="comparison">
+  <img src="classroom.jpg" width="400">
+  <span>&lt;</span>
+  <img src="beach.jpg" width="400">
+</div>
+
