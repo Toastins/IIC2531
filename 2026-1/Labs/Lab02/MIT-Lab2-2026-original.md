@@ -474,10 +474,6 @@ If you get the filters wrong, you may be unable to connect with any
  communication by stopping and starting the containers again,
  using `zookstop.py` followed by `zookld.py`.
 
-Run make handin.zip and upload the resulting
-`handin.zip` file to
-[the submission web site](labs/handin.html).
-
 ## Interlude: RPC library
  
 
@@ -783,10 +779,6 @@ Exercise 9.
  Specify the appropriate `fwrule` entries for the `bank`
  service.
 
-Run make handin.zip and upload the resulting
-`handin.zip` file to
-[the submission web site](labs/handin.html).
-
 ## Part 4: Server-side sandboxing for executable profiles
 
 In this final part, you will implement sandboxing for executable profiles,
@@ -1001,9 +993,7 @@ completed the challenge and want us to grade it, add an empty file named
 at your solution.
 
 You are done!
-Run make handin.zip and upload the resulting
-`handin.zip` file to
-[the submission web site](labs/handin.html).
+Run `make handin.zip` and upload the resulting `handin.zip` file to Canvas.
 
 ## Acknowledgments
 
