@@ -15,6 +15,7 @@ All original content credit goes to the MIT CSAIL teaching staff.
 
 ---
 
+
 # Lab 2: Privilege separation and server-side sandboxing
 
 ## Introduction
@@ -910,4 +911,110 @@ do so, `rpcsrv.py` provides the name of the calling service in
 `self.caller`, based on the IP address of the connection from
 which it received the request.
 
-To get started, you will need 
+To get started, you will need to add `profile` service to your
+`zook.conf`. Run the service in its own container and on its
+own network link.
+
+> 
+
+Exercise 10.
+Add `profile-server.py` to your web server, and implement the
+logic in `ProfileServer.rpc_run()` to correctly
+run executable profiles in a WebAssembly sandbox. You may
+find it helpful to refer to the documentation for the [wasmtime Python
+bindings](https://bytecodealliance.github.io/wasmtime-py/). There are also a number of suggestions in the comments
+in `profile-server.py`.
+
+Make sure that your Zoobar site can support all of the five profiles.
+
+Run make check-lab2 to verify that your
+modified configuration passes our tests. The test case creates some
+user accounts, stores one of the Python profiles in the profile of one
+user, has another user view that profile, and checks that the other
+user sees the right output.
+
+If you run into problems from the `make check-lab2` tests, you
+can check `/tmp/html.out` for the output html of the profiles.
+
+The above design may have several security problems. First, it's important
+that the sandboxed profile code cannot tamper with the state of other
+users' profiles. Second, it's important that a malicious profile cannot
+loop forever.
+
+> 
+
+Exercise 11.Further modify `rpc_run`
+in `profile-server.py` so the sandbox prevents profile code
+from running for more than 5 seconds.
+
+Run make check-lab2 to see whether your
+implementation passes our test cases.
+
+> 
+
+Exercise 12.
+ Specify the appropriate `fwrule` entries for `profile`
+ and other services. For example, `profile` should not be able
+ to communicate with `auth`.
+
+You are now done with the basic sandbox.
+
+> 
+
+Challenge 2! (optional)
+Think of some interesting features that you could implement using
+Python server-side profiles, possibly in combination with extending the
+sandboxing infrastructure (e.g., providing an API for sending messages
+between users, or for sharing files between users). For example, can
+you build profile code that analyzes the social graph of who visited
+whose profile, or an equivalent to a Facebook wall, all using untrusted
+profile code?
+
+Write a profile that demonstrates this functionality in
+`profiles/my-profile.py`. Describe what your profile is
+implementing in a comment at the top of the profile source code.
+Make any changes to your `ProfileAPIServer` necessary to support
+your feature.
+
+> 
+
+Challenge 3! (optional)
+Now that profiles contain Python code, and can give away the user's
+zoobars, it's important that the user's profile code is not modified
+by an attacker, and only the correct profile code is executed by
+`profile-server.py`.
+
+Create an RPC server that is in charge of modifying user profiles, and
+which requires a valid user token in order to modify a user's profile.
+Change the rest of the Zoobar application code to modify user profiles
+via this RPC server. Set permissions on the profile database so that
+the rest of the Zoobar application cannot modify profiles directly.
+Change `profile-server.py` to read profile code directly from the
+profile database, instead of accepting it as input to the `run`
+RPC call.
+
+`make check-lab2` only does a cursory inspection of the person
+db, so it may be that your solution is correct but the test fails, or
+that the test succeeds but your solution is wrong. Therefore, if you've
+completed the challenge and want us to grade it, add an empty file named
+`challenge3.txt` to the lab directory so we know to take a look
+at your solution.
+
+You are done!
+Run make handin.zip and upload the resulting
+`handin.zip` file to
+[the submission web site](labs/handin.html).
+
+## Acknowledgments
+
+Thanks to Stanford's [CS155](https://cs155.stanford.edu/)
+course staff for the initial zoobar web application code, which we
+extended in this lab assignment.
+
+ 
+
+ 
+
+ 
+
+ 
