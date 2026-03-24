@@ -29,7 +29,7 @@ other parts too. To help you privilege-separate this application, the
 `zookws` web server is
 designed to run a web application consisting of multiple components.
 If you are curious, this design is based on the [OKWS](https://okws.org/) web server, described in a
-[research paper](readings/okws.pdf) and used by [okcupid.com](https://www.okcupid.com/). In a large-scale modern
+research paper and used by [okcupid.com](https://www.okcupid.com/). In a large-scale modern
 system, the design would probably consist of many more moving parts, such
 as using Kubernetes to run all of the components of your application,
 using an RPC library like gRPC to communicate between components, etc,
@@ -693,8 +693,7 @@ in size. For this lab, we do not require you to handle such DoS attacks.
 
 Challenge 1! (optional)
 For extra credit, implement the
-[honeywords
-proposal](https://people.csail.mit.edu/rivest/pubs/JR13.pdf) from Ari Juels and Ron Rivest in your authentication service.
+honeywords proposal from Ari Juels and Ron Rivest in your authentication service.
 Consider implementing the honeychecker as a separate service running with
 its own user ID. If you decide to complete this challenge, please include a
 file named `honeywords.txt` in the top level of your lab submission
