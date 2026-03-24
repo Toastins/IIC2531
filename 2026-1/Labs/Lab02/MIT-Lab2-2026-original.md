@@ -272,7 +272,7 @@ All output from code running in various containers that you see in your
  the `main` container.
 
 If something doesn't seem to be working, try to figure out what went wrong, or
-contact the course staff, before proceeding further.
+contact the course instructor or teaching assistants, before proceeding further.
 
 ## Part 1: Privilege-separate the web server setup using containers
 
