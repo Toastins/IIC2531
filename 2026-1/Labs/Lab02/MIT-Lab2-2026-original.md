@@ -203,9 +203,6 @@ student@6566-v26:~/lab$ ip addr show dev eth0
 In this particular example, you would want
 to open your browser and go to `http://192.168.24.128:8888/zoobar/index.cgi/`,
 or, if you are using KVM, to `http://localhost:8888/zoobar/index.cgi/`.
-If you are using AWS EC2, you will need to setup port-forwarding,
-[described in Step 5.5](labs/lab-aws.html), then go to 
-`http://localhost:8888/zoobar/index.cgi/`
 You should see the `zoobar` web site.
 
 Note the different port, 8888 rather than 8080, in the URLs above.
