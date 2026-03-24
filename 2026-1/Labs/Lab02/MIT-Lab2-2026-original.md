@@ -406,37 +406,37 @@ into two services, one for static files and the other for Python scripts,
 running as different users.
 
 > 
-
-Exercise 2.
-Modify `zook.conf` to replace `zookfs` with
-two separate services, `dynamic` and `static`.
-Both should use `cmd = zookfs`.
-
-`dynamic` should execute just `/zoobar/index.cgi`
-(which runs all the Python scripts), but should not serve any static
-files.
-`static` should serve static files but not execute anything.
-
-To remove the `zookfs` container so that `zookld.py`
-doesn't start it, run ./zookclean.py zookfs.
-
-Run the dynamic and static services on different virtual networks.
-
-This separation requires `zookd` to determine which
-service should handle a particular request.
-You may use `zookws`'s URL filtering to do this,
-without modifying the application or the URLs that it uses.
-The URL filters are specified in `zook.conf`,
-and support regular expressions.
-For example, `url = .*` matches all requests, while
-`url = /zoobar/(abc|def)\.html` matches requests
-to `/zoobar/abc.html` and `/zoobar/def.html`.
-
-For this exercise, you should only modify `zook.conf`; don't modify any C or
-Python code.
-
-Run make check-lab2 to verify that
-your modified configuration passes our tests.
+>
+>Exercise 2.
+>Modify `zook.conf` to replace `zookfs` with
+>two separate services, `dynamic` and `static`.
+>Both should use `cmd = zookfs`.
+>
+>`dynamic` should execute just `/zoobar/index.cgi`
+>(which runs all the Python scripts), but should not serve any static
+>files.
+>`static` should serve static files but not execute anything.
+>
+>To remove the `zookfs` container so that `zookld.py`
+>doesn't start it, run ./zookclean.py zookfs.
+>
+>Run the dynamic and static services on different virtual networks.
+>
+>This separation requires `zookd` to determine which
+>service should handle a particular request.
+>You may use `zookws`'s URL filtering to do this,
+>without modifying the application or the URLs that it uses.
+>The URL filters are specified in `zook.conf`,
+>and support regular expressions.
+>For example, `url = .*` matches all requests, while
+>`url = /zoobar/(abc|def)\.html` matches requests
+>to `/zoobar/abc.html` and `/zoobar/def.html`.
+>
+>For this exercise, you should only modify `zook.conf`; don't modify any C or
+>Python code.
+>
+>Run make check-lab2 to verify that
+>your modified configuration passes our tests.
 
 We would like to control with whom dynamic and static can communicate. For
  example, even if `static` were compromised, we want the attacker be
@@ -453,10 +453,10 @@ We would like to control with whom dynamic and static can communicate. For
 
  
 > 
- Exercise 3.
- Write appropriate `fwrule` entries
- for `main`, `static`, and `dynamic` to limit the
- communication as specified above.
+> Exercise 3.
+> Write appropriate `fwrule` entries
+> for `main`, `static`, and `dynamic` to limit the
+> communication as specified above.
 
  
 If you get the filters wrong, you may be unable to connect with any
@@ -580,32 +580,32 @@ Specifically, your job will be as follows:
 
 > 
 
-Exercise 4.
-Implement privilege separation for user authentication, as described above.
-
-A good starting point would be to first split out the credentials
-originally stored in the `Person` database into a separate
-`Cred` database, but still do everything in the `dynamic`
-service. Don't forget to create a regular `Person` database
-entry for newly registered users.
-
-Once that works, add explicit function calls between the code that you
-expect will still live in the `dynamic` service (which does not
-touch `Cred`) and the functions that you will eventually move
-into `auth-server` (which does touch `Cred`). Make sure
-this works with just functions first, without actually moving the code
-into a separate `auth-server`.
-
-Finally, set up the `auth-server.py` to run the code handling the
-`Cred` database, and turn the function calls from the previous
-step into actual RPCs to `auth-server`.
-
-Run make check-lab2 to verify that
-your privilege-separated authentication service passes our tests.
+>Exercise 4.
+>Implement privilege separation for user authentication, as described above.
+>
+>A good starting point would be to first split out the credentials
+>originally stored in the `Person` database into a separate
+>`Cred` database, but still do everything in the `dynamic`
+>service. Don't forget to create a regular `Person` database
+>entry for newly registered users.
+>
+>Once that works, add explicit function calls between the code that you
+>expect will still live in the `dynamic` service (which does not
+>touch `Cred`) and the functions that you will eventually move
+>into `auth-server` (which does touch `Cred`). Make sure
+>this works with just functions first, without actually moving the code
+>into a separate `auth-server`.
+>
+>Finally, set up the `auth-server.py` to run the code handling the
+>`Cred` database, and turn the function calls from the previous
+>step into actual RPCs to `auth-server`.
+>
+>Run make check-lab2 to verify that
+>your privilege-separated authentication service passes our tests.
 
 > 
- Exercise 5.
- Specify the appropriate `fwrule` entries for `auth`.
+> Exercise 5.
+> Specify the appropriate `fwrule` entries for `auth`.
 
 	
 
@@ -654,30 +654,30 @@ which stands for Password-Based Key Derivation Function (version 2).
 
 > 
 
-Exercise 6.
-Implement password hashing and salting in your authentication service.
-In particular, you will need to extend your `Cred` table to include
-a `salt` column; modify the registration code to choose a random
-salt, and to store a hash of the password together with the salt, instead
-of the password itself; and modify the login code to hash the supplied
-password together with the stored salt, and compare it with the stored
-hash. Don't remove the password column from the `Cred` table
-(the check for exercise 5 requires that it be present); you can store
-the hashed password in the existing `password` column.
+>Exercise 6.
+>Implement password hashing and salting in your authentication service.
+>In particular, you will need to extend your `Cred` table to include
+>a `salt` column; modify the registration code to choose a random
+>salt, and to store a hash of the password together with the salt, instead
+>of the password itself; and modify the login code to hash the supplied
+>password together with the stored salt, and compare it with the stored
+>hash. Don't remove the password column from the `Cred` table
+>(the check for exercise 5 requires that it be present); you can store
+>the hashed password in the existing `password` column.
 
-To implement PBKDF2 hashing, you can use the
-[Python PBKDF2
-module](https://www.dlitz.net/software/python-pbkdf2/). Roughly, you should `import pbkdf2`, and then hash
-a password using `pbkdf2.PBKDF2(password, salt).hexread(32)`.
-We have provided a copy of `pbkdf2.py` in the `zoobar`
-directory. Do not use the `random.random` function to generate a salt
-as [the documentation of the random module](https://docs.python.org/3/library/random.html)
-states that it is not cryptographically secure. A secure alternative is
-the function `os.urandom`.
-
-Run make check-lab2 to verify that your
-hashing and salting code passes our tests. Keep in mind that our tests
-are not exhaustive.
+>To implement PBKDF2 hashing, you can use the
+>[Python PBKDF2
+>module](https://www.dlitz.net/software/python-pbkdf2/). Roughly, you should >`import pbkdf2`, and then hash
+>a password using `pbkdf2.PBKDF2(password, salt).hexread(32)`.
+>We have provided a copy of `pbkdf2.py` in the `zoobar`
+>directory. Do not use the `random.random` function to generate a salt
+>as [the documentation of the random module](https://docs.python.org/3/library/random.html)
+>states that it is not cryptographically secure. A secure alternative is
+>the function `os.urandom`.
+>
+>Run make check-lab2 to verify that your
+>hashing and salting code passes our tests. Keep in mind that our tests
+>are not exhaustive.
 
 A surprising side-effect of using a very computationally expensive
 hash function like PBKDF2 is that an adversary can now use this
@@ -688,16 +688,6 @@ in to some account by supplying a very large password (1MB in size),
 the server would spend an entire minute trying to compute PBKDF2 on that
 password. Django's solution is to limit supplied passwords to at most 4KB
 in size. For this lab, we do not require you to handle such DoS attacks.
-
-> 
-
-Challenge 1! (optional)
-For extra credit, implement the
-honeywords proposal from Ari Juels and Ron Rivest in your authentication service.
-Consider implementing the honeychecker as a separate service running with
-its own user ID. If you decide to complete this challenge, please include a
-file named `honeywords.txt` in the top level of your lab submission
-that gives a brief overview of your approach and solution.
 
 ## Part 3: Privilege-separating the bank in Zoobar
 
@@ -719,27 +709,27 @@ will ensure that all transfers are correctly logged for future audits.
 
 > 
 
-Exercise 7.
-Privilege-separate the bank logic into a separate `bank` service, along the
-lines of the authentication service. Your service should implement
-the `transfer` and `balance` functions, which are currently
-implemented by `bank.py` and called from several places in the
-rest of the application code.
-
-You should split the `zoobar` balance information into
-a separate `Bank` database (in `zoodb.py`);
-implement the bank server by modifying `bank-server.py`;
-add the bank service to `zook.conf`;
-create client RPC stubs for invoking the bank service;
-and modify the rest of the application code to invoke the RPC
-stubs instead of calling `bank.py`'s functions directly.
-
-Don't forget to handle the case of account creation, when the new user
-needs to get an initial 10 zoobars. This may require you to change the
-interface of the bank service.
-
-Run make check-lab2 to verify that
-your privilege-separated bank service passes our tests.
+>Exercise 7.
+>Privilege-separate the bank logic into a separate `bank` service, along the
+>lines of the authentication service. Your service should implement
+>the `transfer` and `balance` functions, which are currently
+>implemented by `bank.py` and called from several places in the
+>rest of the application code.
+>
+>You should split the `zoobar` balance information into
+>a separate `Bank` database (in `zoodb.py`);
+>implement the bank server by modifying `bank-server.py`;
+>add the bank service to `zook.conf`;
+>create client RPC stubs for invoking the bank service;
+>and modify the rest of the application code to invoke the RPC
+>stubs instead of calling `bank.py`'s functions directly.
+>
+>Don't forget to handle the case of account creation, when the new user
+>needs to get an initial 10 zoobars. This may require you to change the
+>interface of the bank service.
+>
+>Run make check-lab2 to verify that
+>your privilege-separated bank service passes our tests.
 
 Finally, we need to fix one more problem with the bank service.
 In particular, an adversary that can access the bank service (i.e.,
@@ -757,16 +747,16 @@ reject transfers if the token is invalid.
 
 > 
 
-Exercise 8.
-Add authentication to the `transfer` RPC in the bank service.
-The current user's token is accessible as `g.user.token`.
-How should the bank validate the supplied token?
+>Exercise 8.
+>Add authentication to the `transfer` RPC in the bank service.
+>The current user's token is accessible as `g.user.token`.
+>How should the bank validate the supplied token?
 
 > 
 
-Exercise 9.
- Specify the appropriate `fwrule` entries for the `bank`
- service.
+>Exercise 9.
+> Specify the appropriate `fwrule` entries for the `bank`
+> service.
 
 ## Part 4: Server-side sandboxing for executable profiles
 
@@ -898,21 +888,21 @@ own network link.
 
 > 
 
-Exercise 10.
-Add `profile-server.py` to your web server, and implement the
-logic in `ProfileServer.rpc_run()` to correctly
-run executable profiles in a WebAssembly sandbox. You may
-find it helpful to refer to the documentation for the [wasmtime Python
-bindings](https://bytecodealliance.github.io/wasmtime-py/). There are also a number of suggestions in the comments
-in `profile-server.py`.
+>Exercise 10.
+>Add `profile-server.py` to your web server, and implement the
+>logic in `ProfileServer.rpc_run()` to correctly
+>run executable profiles in a WebAssembly sandbox. You may
+>find it helpful to refer to the documentation for the [wasmtime Python
+>bindings](https://bytecodealliance.github.io/wasmtime-py/). There are also a number of suggestions in the comments
+>in `profile-server.py`.
 
-Make sure that your Zoobar site can support all of the five profiles.
+>Make sure that your Zoobar site can support all of the five profiles.
 
-Run make check-lab2 to verify that your
-modified configuration passes our tests. The test case creates some
-user accounts, stores one of the Python profiles in the profile of one
-user, has another user view that profile, and checks that the other
-user sees the right output.
+>Run make check-lab2 to verify that your
+>modified configuration passes our tests. The test case creates some
+>user accounts, stores one of the Python profiles in the profile of one
+>user, has another user view that profile, and checks that the other
+>user sees the right output.
 
 If you run into problems from the `make check-lab2` tests, you
 can check `/tmp/html.out` for the output html of the profiles.
@@ -924,62 +914,21 @@ loop forever.
 
 > 
 
-Exercise 11.Further modify `rpc_run`
-in `profile-server.py` so the sandbox prevents profile code
-from running for more than 5 seconds.
+>Exercise 11.Further modify `rpc_run`
+>in `profile-server.py` so the sandbox prevents profile code
+>from running for more than 5 seconds.
 
-Run make check-lab2 to see whether your
-implementation passes our test cases.
+>Run make check-lab2 to see whether your
+>implementation passes our test cases.
 
 > 
 
-Exercise 12.
- Specify the appropriate `fwrule` entries for `profile`
- and other services. For example, `profile` should not be able
- to communicate with `auth`.
+>Exercise 12.
+> Specify the appropriate `fwrule` entries for `profile`
+> and other services. For example, `profile` should not be able
+> to communicate with `auth`.
 
 You are now done with the basic sandbox.
-
-> 
-
-Challenge 2! (optional)
-Think of some interesting features that you could implement using
-Python server-side profiles, possibly in combination with extending the
-sandboxing infrastructure (e.g., providing an API for sending messages
-between users, or for sharing files between users). For example, can
-you build profile code that analyzes the social graph of who visited
-whose profile, or an equivalent to a Facebook wall, all using untrusted
-profile code?
-
-Write a profile that demonstrates this functionality in
-`profiles/my-profile.py`. Describe what your profile is
-implementing in a comment at the top of the profile source code.
-Make any changes to your `ProfileAPIServer` necessary to support
-your feature.
-
-> 
-
-Challenge 3! (optional)
-Now that profiles contain Python code, and can give away the user's
-zoobars, it's important that the user's profile code is not modified
-by an attacker, and only the correct profile code is executed by
-`profile-server.py`.
-
-Create an RPC server that is in charge of modifying user profiles, and
-which requires a valid user token in order to modify a user's profile.
-Change the rest of the Zoobar application code to modify user profiles
-via this RPC server. Set permissions on the profile database so that
-the rest of the Zoobar application cannot modify profiles directly.
-Change `profile-server.py` to read profile code directly from the
-profile database, instead of accepting it as input to the `run`
-RPC call.
-
-`make check-lab2` only does a cursory inspection of the person
-db, so it may be that your solution is correct but the test fails, or
-that the test succeeds but your solution is wrong. Therefore, if you've
-completed the challenge and want us to grade it, add an empty file named
-`challenge3.txt` to the lab directory so we know to take a look
-at your solution.
 
 You are done!
 Run `make handin.zip` and upload the resulting `handin.zip` file to Canvas.
