@@ -26,7 +26,7 @@ sandboxing, in the context of a simple python web application called
 The main goal of privilege separation is to ensure that if an adversary
 compromises one part of an application, the adversary doesn't compromise the
 other parts too. To help you privilege-separate this application, the
-`zookws` web server that you already saw in the previous lab is
+`zookws` web server is
 designed to run a web application consisting of multiple components.
 If you are curious, this design is based on the [OKWS](https://okws.org/) web server, described in a
 [research paper](readings/okws.pdf) and used by [okcupid.com](https://www.okcupid.com/). In a large-scale modern
@@ -66,17 +66,11 @@ some files, or to access existing zoobar databases, to function properly.
 You will use the remote procedure call library and some shim code that we provide to
 securely sandbox executable profiles on the server using WebAssembly.
 
-To fetch the new source code, use Git to commit your Lab 1 solutions,
-and then switch to the `lab2` branch.
+To fetch the lab source code, use Git to clone or update the lab repository
+and switch to the `lab2` branch.
 
 ```
 student@6566-v26:~$ cd lab
-student@6566-v26:~/lab$ git status
-...
-student@6566-v26:~/lab$ git add exploit-*.py http.c zookd.c [and any other new files...]
-student@6566-v26:~/lab$ git commit -am 'my solution to lab1'
-[lab1 c54dd4d] my solution to lab1
- 1 files changed, 1 insertions(+), 0 deletions(-)
 student@6566-v26:~/lab$ git fetch
 ...
 student@6566-v26:~/lab$ git checkout -b lab2 origin/lab2
@@ -213,9 +207,8 @@ connections to port 8888 to port 8080 on the `main` container.
 You can see the `iptables` rules we used to achieve this in
 `/etc/rc.local` in your VM.
 
-If you are having issues with seeing the web site, one possible cause
-is that the fixes that you made in Lab 1 to fix the buffer overflow bugs
-may be overly strict. If so, please fix it before continuing.
+If you are having issues with seeing the web site, check that your
+web server configuration is not overly restrictive.
 
  
 
@@ -283,9 +276,9 @@ contact the course staff, before proceeding further.
 
 ## Part 1: Privilege-separate the web server setup using containers
 
- In lab 1, `zookws` consisted of essentially one process:
+ Previously, `zookws` consisted of essentially one process:
  `zookd`. From the security point of view, this structure is not ideal:
- for example, any buffer overrun you found, you can use to take
+ for example, any buffer overrun could be used to take
  over `zookws`. For example, you can invoke the dynamic scripts with
  arguments of your choice (e.g., giving many zoobars to yourself), or simpler,
  just write the database that contains the zoobar accounts directly.
