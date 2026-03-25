@@ -1,73 +1,40 @@
-# Lab 2: Privilege Separation and Server-Side Sandboxing
+# Lab 2: Separación de Privilegios y Sandboxing del Lado del Servidor
 
-**Course**: IIC2531 - Pontificia Universidad Católica de Chile  
-**Semester**: 2026-1  
-**Lab Number**: Lab 2
-
----
-
-**Based on**: MIT Course 6.566 Lab 2 (Spring 2026)  
-**Original URL**: https://css.csail.mit.edu/6.566/2026/labs/lab2.html  
-**License**: [Creative Commons Attribution 3.0 Unported](http://creativecommons.org/licenses/by/3.0/us/)
-
-This lab is adapted from MIT's Computer Systems Security course materials.  
-All original content credit goes to the MIT CSAIL teaching staff.
+**Curso**: IIC2531 - Pontificia Universidad Católica de Chile  
+**Semestre**: 2026-1  
+**Número de Lab**: Lab 2
 
 ---
 
+**Basado en**: MIT Course 6.566 Lab 2 (Spring 2026)  
+**URL Original**: https://css.csail.mit.edu/6.566/2026/labs/lab2.html  
+**Licencia**: [Creative Commons Attribution 3.0 Unported](http://creativecommons.org/licenses/by/3.0/us/)
 
-# Lab 2: Privilege separation and server-side sandboxing
+Este laboratorio está adaptado de los materiales del curso Computer Systems Security del MIT.  
+Todo el crédito del contenido original corresponde al equipo docente de MIT CSAIL.
 
-## Introduction
+---
 
- This lab will introduce you to privilege separation and server-side
-sandboxing, in the context of a simple python web application called
-`zoobar`, where users transfer "zoobars" (credits) between each other.
-The main goal of privilege separation is to ensure that if an adversary
-compromises one part of an application, the adversary doesn't compromise the
-other parts too. To help you privilege-separate this application, the
-`zookws` web server is
-designed to run a web application consisting of multiple components.
-If you are curious, this design is based on the [OKWS](https://okws.org/) web server, described in a
-research paper and used by [okcupid.com](https://www.okcupid.com/). In a large-scale modern
-system, the design would probably consist of many more moving parts, such
-as using Kubernetes to run all of the components of your application,
-using an RPC library like gRPC to communicate between components, etc,
-but `zookws` packs all of this into a relatively simple system.
 
-In this lab, you will set up a privilege-separated web server,
-examine possible vulnerabilities, and break up the application
-code into less-privileged components to minimize the effects of any
-single vulnerability. The lab will use modern support for privilege
-separation, [Linux containers](https://linuxcontainers.org/).
-(The original OKWS design used user IDs and chroot, because Linux
-containers and namespaces didn't exist at that time.)
+# Lab 2: Separación de privilegios y sandboxing del lado del servidor
 
- You will also extend the Zoobar web application to support
-*executable profiles*, which allow users to use Python code as
-their profiles. To make a profile, a user saves a Python program
-in their profile on their Zoobar home page. (To indicate that the
-profile contains Python code, the first line must be `#!python`.)
-Whenever another user views the user's Python profile, the server will
-execute the Python code in that user's profile to generate the resulting
-profile output. This will allow users to implement a variety of features
-in their profiles, such as:
+## Introducción
 
-- A profile that greets visitors by their user name.
+Este laboratorio te introducirá a la separación de privilegios y sandboxing del lado del servidor, en el contexto de una aplicación web simple en Python llamada `zoobar`, donde los usuarios transfieren "zoobars" (créditos) entre sí. El objetivo principal de la separación de privilegios es asegurar que si un adversario compromete una parte de la aplicación, el adversario no comprometa las otras partes también. Para ayudarte a separar privilegios en esta aplicación, el servidor web `zookws` está diseñado para ejecutar una aplicación web que consiste en múltiples componentes. Si tienes curiosidad, este diseño está basado en el servidor web [OKWS](https://okws.org/), descrito en un research paper y usado por [okcupid.com](https://www.okcupid.com/). En un sistema moderno a gran escala, el diseño probablemente consistiría en muchas más partes móviles, como usar Kubernetes para ejecutar todos los componentes de tu aplicación, usar una librería RPC como gRPC para comunicarse entre componentes, etc, pero `zookws` empaqueta todo esto en un sistema relativamente simple.
 
-- A profile that keeps track of the last several visitors to that profile.
+En este laboratorio, configurarás un servidor web con separación de privilegios, examinarás posibles vulnerabilidades, y dividirás el código de la aplicación en componentes con menos privilegios para minimizar los efectos de cualquier vulnerabilidad individual. El laboratorio usará soporte moderno para separación de privilegios, [Linux containers](https://linuxcontainers.org/). (El diseño original de OKWS usaba user IDs y chroot, porque los Linux containers y namespaces no existían en ese momento.)
 
-- A profile that gives a zoobar to every visitor (limit 1 per minute).
+También extenderás la aplicación web Zoobar para soportar *perfiles ejecutables*, que permiten a los usuarios usar código Python como sus perfiles. Para crear un perfil, un usuario guarda un programa Python en su perfil en su página principal de Zoobar. (Para indicar que el perfil contiene código Python, la primera línea debe ser `#!python`.) Cada vez que otro usuario vea el perfil Python del usuario, el servidor ejecutará el código Python en ese perfil del usuario para generar la salida del perfil resultante. Esto permitirá a los usuarios implementar una variedad de características en sus perfiles, como:
 
-Supporting this safely requires sandboxing the profile code on the server,
-so that it cannot perform arbitrary operations or access arbitrary files.
-On the other hand, this code may need to keep track of persistent data in
-some files, or to access existing zoobar databases, to function properly.
-You will use the remote procedure call library and some shim code that we provide to
-securely sandbox executable profiles on the server using WebAssembly.
+- Un perfil que saluda a los visitantes por su nombre de usuario.
 
-To fetch the lab source code, use Git to clone or update the lab repository
-and switch to the `lab2` branch.
+- Un perfil que mantiene registro de los últimos visitantes a ese perfil.
+
+- Un perfil que da un zoobar a cada visitante (límite 1 por minuto).
+
+Soportar esto de manera segura requiere hacer sandboxing del código del perfil en el servidor, para que no pueda realizar operaciones arbitrarias o acceder a archivos arbitrarios. Por otro lado, este código puede necesitar mantener registro de datos persistentes en algunos archivos, o acceder a bases de datos zoobar existentes, para funcionar correctamente. Usarás la librería de llamadas a procedimiento remoto (RPC) y algún código shim que proporcionamos para hacer sandboxing de manera segura de los perfiles ejecutables en el servidor usando WebAssembly.
+
+Para obtener el código fuente del laboratorio, usa Git para clonar o actualizar el repositorio del lab y cambia a la rama `lab2`.
 
 ```
 student@6566-v26:~$ cd lab
@@ -78,8 +45,7 @@ Branch lab2 set up to track remote branch lab2 from origin.
 Switched to a new branch 'lab2'
 ```
 
-Once your source code is in place, make sure that you can compile and install
-the web server and the `zoobar` application:
+Una vez que tu código fuente esté en su lugar, asegúrate de que puedas compilar e instalar el servidor web y la aplicación `zoobar`:
 
 ```
 student@6566-v26:~/lab$ make
