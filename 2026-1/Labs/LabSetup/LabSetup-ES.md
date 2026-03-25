@@ -57,10 +57,10 @@ Host 566vm
 
 Los archivos que necesitarás para este y los laboratorios siguientes se distribuyen usando el sistema de control de versiones [Git](https://git-scm.com/). También puedes usar Git para llevar un registro de cualquier cambio que hagas al código fuente inicial. Aquí tienes una [introducción a Git](https://missing.csail.mit.edu/2020/version-control/) y el [manual de usuario de Git](https://www.kernel.org/pub/software/scm/git/docs/user-manual.html), que pueden resultarte útiles.
 
-El repositorio Git del curso está disponible en [https://github.com/mit-pdos/6.566-lab-2026](https://github.com/mit-pdos/6.566-lab-2026). Para obtener el código del laboratorio, inicia sesión en la VM usando la cuenta `student` y clona el código fuente para el laboratorio 1 de la siguiente manera:
+El repositorio Git del curso está disponible en [https://github.com/nachoparada/IIC2531-26-01-labs](https://github.com/nachoparada/IIC2531-26-01-labs). Para obtener el código del laboratorio, inicia sesión en la VM usando la cuenta `student` y clona el código fuente para el laboratorio 1 de la siguiente manera:
 
 ```
-student@6566-v26:~$ git clone https://github.com/mit-pdos/6.566-lab-2026 lab
+student@6566-v26:~$ git clone https://github.com/nachoparada/IIC2531-26-01-labs lab
 Cloning into 'lab'...
 student@6566-v26:~$ cd lab
 student@6566-v26:~/lab$
