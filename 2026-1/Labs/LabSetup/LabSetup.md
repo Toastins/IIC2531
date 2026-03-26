@@ -1,51 +1,51 @@
-# Lab 1: Buffer overflows
+# Lab Setup: Instalando el Ambiente de Desarrollo
 
-## Introduction
+## Introducción
 
-You will do a sequence of labs in 6.566. These labs will give you practical experience with common attacks and counter-measures. To make the issues concrete, you will explore the attacks and counter-measures in the context of the zoobar web application in the following ways:
+Realizarás una secuencia de laboratorios en IIC2531. Estos laboratorios te darán experiencia práctica con ataques comunes y contramedidas. Para hacer los temas concretos, explorarás los ataques y contramedidas en el contexto de la aplicación web zoobar de las siguientes maneras:
 
-- **Lab 2:** you will improve the zoobar web application by using privilege separation, so that if one component is compromised, the adversary doesn't get control over the whole web application.
-- **Lab 3:** you will explore the zoobar web application, and use buffer overflow attacks to break its security properties.
-- **Lab 4:** you will improve the zoobar application against browser attacks.
-- **Lab 5:** you will add HTTPS support and security key (WebAuthn) authentication.
+- **Lab 2:** mejorarás la aplicación web zoobar usando separación de privilegios, de modo que si un componente es comprometido, el adversario no obtenga control sobre toda la aplicación web.
+- **Lab 3:** explorarás la aplicación web zoobar, y usarás ataques de desbordamiento de buffer para romper sus propiedades de seguridad.
+- **Lab 4:** mejorarás la aplicación zoobar contra ataques de navegador.
+- **Lab 5:** agregarás soporte HTTPS y autenticación con llave de seguridad (WebAuthn).
 
-Each lab requires you to learn a new programming language or some other piece of infrastructure. For example, in lab 3 you must become intimately familiar with certain aspects of the C language, x86 assembly language, `gdb`, etc. Detailed familiarity with many different pieces of infrastructure is needed to understand attacks and defenses in realistic situations: security weaknesses often show up in corner cases, and so you need to understand the details to craft exploits and design defenses for those corner cases. These two factors (new infrastructure and details) can make the labs time consuming. You should start early on the labs and work on them daily for some limited time (each lab has several exercises), instead of trying to do all exercises in a single shot just before the deadline. Take the time to understand the relevant details. 
+Cada laboratorio requiere que aprendas un nuevo lenguaje de programación u otra pieza de infraestructura. Por ejemplo, en el lab 3 debes familiarizarte íntimamente con ciertos aspectos del lenguaje C, lenguaje ensamblador x86, `gdb`, etc. Se necesita familiaridad detallada con muchas piezas diferentes de infraestructura para entender ataques y defensas en situaciones realistas: las debilidades de seguridad a menudo aparecen en casos límite, por lo que necesitas entender los detalles para crear exploits y diseñar defensas para esos casos límite. Estos dos factores (nueva infraestructura y detalles) pueden hacer que los laboratorios consuman mucho tiempo. Deberías comenzar temprano con los laboratorios y trabajar en ellos diariamente por un tiempo limitado (cada laboratorio tiene varios ejercicios), en lugar de intentar hacer todos los ejercicios de una sola vez justo antes de la fecha límite. Tómate el tiempo para entender los detalles relevantes.
 
-Several labs ask you to design exploits. These exploits are realistic enough that you might be able to use them for a real attack, but you should *not* do so. The point of the designing exploits is to teach you how to defend against them, not how to use them---attacking computer systems is illegal and can get you into serious trouble. Don't do it.
+Varios laboratorios te piden diseñar exploits. Estos exploits son lo suficientemente realistas como para que podrías usarlos en un ataque real, pero *no* deberías hacerlo. El punto de diseñar exploits es enseñarte cómo defenderte contra ellos, no cómo usarlos---atacar sistemas computacionales es ilegal y puede meterte en serios problemas. No lo hagas.
 
-**NOTE:** Since we re-use the same lab assignments across years, we ask that you please do not make your lab code publicly accessible (e.g., by checking your solutions into a public repository on GitHub). This helps keep the labs fair and interesting for students in future years.
+**NOTA:** Dado que reutilizamos las mismas asignaciones de laboratorio a través de los años, te pedimos que por favor no hagas tu código de laboratorio públicamente accesible (por ejemplo, subiendo tus soluciones a un repositorio público en GitHub). Esto ayuda a mantener los laboratorios justos e interesantes para estudiantes en años futuros.
 
-## Lab infrastructure
+## Infraestructura del laboratorio
 
-A small change in the compiler, environment variables, or the way the program is executed can result in slightly different memory layout and code structure, thus requiring a different exploit. For this reason, this lab uses a [virtual machine](https://en.wikipedia.org/wiki/Virtual_machine) to run the vulnerable web server code.
+Un pequeño cambio en el compilador, variables de entorno, o la forma en que se ejecuta el programa puede resultar en una disposición de memoria y estructura de código ligeramente diferente, requiriendo así un exploit diferente. Por esta razón, este laboratorio usa una [virtual machine](https://en.wikipedia.org/wiki/Virtual_machine) para ejecutar el código del servidor web vulnerable.
 
-### Downloading the VM
+### Descargando la VM
 
-We have prepared a virtual machine for you containing a standard installation of [Ubuntu](https://ubuntu.com/) 24.04 Linux, which you can download [here](https://web.mit.edu/6.858/2026/6.566-standalone-v26.zip) and unpack it on your computer. To start working on this lab assignment, you'll need some way to run this virtual machine. There are a few options; if you're unsure of how to run a VM, running the VM on AWS (the last option) may be a good default plan:
+Hemos preparado una virtual machine para ti que contiene una instalación estándar de [Ubuntu](https://ubuntu.com/) 24.04 Linux, la cual puedes descargar [aquí](https://drive.google.com/file/d/19PW3WVsMNR0y0jrRzRjg8SSi6e73fTbk/view?usp=sharing) y descomprimirla en tu computador. Para comenzar a trabajar en esta asignación de laboratorio, necesitarás alguna forma de ejecutar esta virtual machine. Hay algunas opciones; si no estás seguro de cómo ejecutar una VM, ejecutar la VM en AWS (la última opción) puede ser un buen plan por defecto:
 
-- **Linux with an x86 CPU.**
-  Use [KVM](https://www.linux-kvm.org/), which is built into the Linux kernel. KVM should be available through your distribution, and is preinstalled on Athena cluster computers; on Debian or Ubuntu, try `apt-get install qemu-kvm`. KVM requires hardware virtualization support in your CPU, and you must enable this support in your BIOS (which is often, but not always, the default). If you have another virtual machine monitor installed on your machine (e.g., VMware), that virtual machine monitor may grab the hardware virtualization support exclusively and prevent KVM from working.
+- **Linux con CPU x86.**
+  Usa [KVM](https://www.linux-kvm.org/), que está incorporado en el kernel de Linux. KVM debería estar disponible a través de tu distribución, y está preinstalado en los computadores del clúster Athena; en Debian o Ubuntu, prueba `apt-get install qemu-kvm`. KVM requiere soporte de virtualización por hardware en tu CPU, y debes habilitar este soporte en tu BIOS (lo cual es frecuentemente, pero no siempre, el valor por defecto). Si tienes otro monitor de virtual machine instalado en tu máquina (por ejemplo, VMware), ese monitor de virtual machine puede tomar el soporte de virtualización por hardware exclusivamente y prevenir que KVM funcione.
 
-  To start the VM with KVM, unpack the zip file you downloaded above and run `./6.566-standalone-v26.sh` from a terminal (`Ctrl+A x` to force quit). If you get a permission denied error from this script, try adding yourself to the `kvm` group with `sudo gpasswd -a \`whoami\` kvm`, then log out and log back in.
+  Para iniciar la VM con KVM, descomprime el archivo zip que descargaste arriba y ejecuta `./6.566-standalone-v26.sh` desde una terminal (`Ctrl+A x` para forzar salida). Si obtienes un error de permiso denegado de este script, intenta agregarte al grupo `kvm` con `sudo gpasswd -a \`whoami\` kvm`, luego cierra sesión y vuelve a iniciar sesión.
 
-- **Windows with an x86 CPU (most of them).**
-  Download [VMware Workstation](https://ist.mit.edu/vmware/workstation) from IS&T. To start the course VM using VMware, import `6.566-standalone-v26.vmdk`. Go to File > New, select "create a custom virtual machine", choose Linux > Debian 9.x 64-bit, choose Legacy BIOS, and use an existing virtual disk (and select the `6.566-standalone-v26.vmdk` file, choosing the "Take this disk away" option). Finally, click Finish to complete the setup.
+- **Windows con CPU x86 (la mayoría de ellos).**
+  Descarga [VMware Workstation](https://ist.mit.edu/vmware/workstation) de IS&T. Para iniciar la VM del curso usando VMware, importa `6.566-standalone-v26.vmdk`. Ve a File > New, selecciona "create a custom virtual machine", elige Linux > Debian 9.x 64-bit, elige Legacy BIOS, y usa un disco virtual existente (y selecciona el archivo `6.566-standalone-v26.vmdk`, eligiendo la opción "Take this disk away"). Finalmente, haz clic en Finish para completar la configuración.
 
-- **Mac with an x86 CPU (e.g., not M1).**
-  Download [UTM](https://mac.getutm.app/). For setup, click "Create a New Virtual Machine", click "Emulate", click "Other", check "Skip ISO boot", specify drive size as 24 GB, and continue through to creation. After creation, right click on your VM, click "edit", right click on "IDE Drive", click "delete", click "New" Drive, click "Import", and open the "vmdk" file from the course VM download. To add port forwarding, click "Network", switch "Network Mode" to "Emulated VLAN", switch "Network Card" to "virtio-net-pci", click the "Port Forward" dropdown, click "New", fill "22" into the 2nd box and "2222" into the 4th box.
+- **Mac con CPU x86 (por ejemplo, no M1).**
+  Descarga [UTM](https://mac.getutm.app/). Para la configuración, haz clic en "Create a New Virtual Machine", haz clic en "Emulate", haz clic en "Other", marca "Skip ISO boot", especifica el tamaño del disco como 24 GB, y continúa hasta la creación. Después de la creación, haz clic derecho en tu VM, haz clic en "edit", haz clic derecho en "IDE Drive", haz clic en "delete", haz clic en "New" Drive, haz clic en "Import", y abre el archivo "vmdk" de la descarga de la VM del curso. Para agregar reenvío de puertos, haz clic en "Network", cambia "Network Mode" a "Emulated VLAN", cambia "Network Card" a "virtio-net-pci", haz clic en el desplegable "Port Forward", haz clic en "New", llena "22" en la 2da casilla y "2222" en la 4ta casilla.
 
-- **For users of non-x86 computers.**
-  If you are using a computer with a non-x86 processor (e.g., Mac laptops with the ARM M1 processor), you can run the virtual machine using qemu. To do this, first install [Homebrew](https://brew.sh/), then install qemu by running [brew install qemu](https://formulae.brew.sh/formula/qemu), and finally edit the 6.858-x86_64-v22.sh shell script that was part of the course VM image, and remove the -enable-kvm flag. At this point, you should be able to start the course VM by running ./6.858-x86_64-v22.sh as above.
+- **Para usuarios de computadores no-x86.**
+  Si estás usando un computador con un procesador no-x86 (por ejemplo, laptops Mac con el procesador ARM M1), puedes ejecutar la virtual machine usando qemu. Para hacer esto, primero instala [Homebrew](https://brew.sh/), luego instala qemu ejecutando [brew install qemu](https://formulae.brew.sh/formula/qemu), y finalmente edita el script de shell 6.858-x86_64-v22.sh que era parte de la imagen de la VM del curso, y elimina la flag -enable-kvm. En este punto, deberías poder iniciar la VM del curso ejecutando ./6.858-x86_64-v22.sh como se indicó arriba.
 
-### Logging in
+### Iniciando sesión
 
-You will use the `student` account in the VM for your work. The password for the `student` account is `student`. You can also get access to the `root` account in the VM using `sudo`; for example, you can install new software packages using `sudo apt-get install pkgname`.
+Usarás la cuenta `student` en la VM para tu trabajo. La contraseña para la cuenta `student` es `student`. También puedes obtener acceso a la cuenta `root` en la VM usando `sudo`; por ejemplo, puedes instalar nuevos paquetes de software usando `sudo apt-get install pkgname`.
 
-You can either log into the virtual machine using its console, or use ssh to log into the virtual machine over the (virtual) network. The latter also lets you easily copy files into and out of the virtual machine with `scp` or `rsync`. How you access the virtual machine over the network depends on how you're running it. If you're using VMWare, you'll first have to find the virtual machine's IP address. To do so, log in on the console, run `ip addr show dev eth0`, and note the IP address listed beside `inet`. With kvm, you can use `localhost` as the IP address for ssh and HTTP. You can now log in with ssh by running the following command from your host machine: `ssh -p 2222 student@IPADDRESS`.
+Puedes iniciar sesión en la virtual machine usando su consola, o usar ssh para iniciar sesión en la virtual machine a través de la red (virtual). Esto último también te permite copiar fácilmente archivos hacia y desde la virtual machine con `scp` o `rsync`. Cómo accedes a la virtual machine a través de la red depende de cómo la estés ejecutando. Si estás usando VMware, primero tendrás que encontrar la dirección IP de la virtual machine. Para hacerlo, inicia sesión en la consola, ejecuta `ip addr show dev eth0`, y anota la dirección IP listada junto a `inet`. Con kvm, puedes usar `localhost` como la dirección IP para ssh y HTTP. Ahora puedes iniciar sesión con ssh ejecutando el siguiente comando desde tu máquina host: `ssh -p 2222 student@IPADDRESS`.
 
-For security, SSH does not allow logging in over the network using a password (and, in this specific case, the password is known to everyone). To log in via SSH, you will need to set up an [SSH Key](https://www.booleanworld.com/set-ssh-keys-linux-unix-server/).
+Por seguridad, SSH no permite iniciar sesión a través de la red usando una contraseña (y, en este caso específico, la contraseña es conocida por todos). Para iniciar sesión vía SSH, necesitarás configurar una [SSH Key](https://www.booleanworld.com/set-ssh-keys-linux-unix-server/).
 
-You may also find it helpful to create a host alias for your 6.566 VM in your `~/.ssh/config` file, so that you can simply run, for example, `ssh 566vm` or `scp file.txt 566vm:lab/file.txt`. To do this, add the following lines to your `~/.ssh/config` file, adjusted as needed:
+También puede resultarte útil crear un alias de host para tu VM de 6.566 en tu archivo `~/.ssh/config`, de modo que puedas simplemente ejecutar, por ejemplo, `ssh 566vm` o `scp file.txt 566vm:lab/file.txt`. Para hacer esto, agrega las siguientes líneas a tu archivo `~/.ssh/config`, ajustadas según sea necesario:
 
 ```
 Host 566vm
@@ -53,21 +53,20 @@ Host 566vm
   HostName localhost
   Port 2222
 ```
+## Primeros pasos
 
-## Getting started
+Los archivos que necesitarás para este y los laboratorios siguientes se distribuyen usando el sistema de control de versiones [Git](https://git-scm.com/). También puedes usar Git para llevar un registro de cualquier cambio que hagas al código fuente inicial. Aquí tienes una [introducción a Git](https://missing.csail.mit.edu/2020/version-control/) y el [manual de usuario de Git](https://www.kernel.org/pub/software/scm/git/docs/user-manual.html), que pueden resultarte útiles.
 
-The files you will need for this and subsequent labs are distributed using the [Git](https://git-scm.com/) version control system. You can also use Git to keep track of any changes you make to the initial source code. Here's an [overview of Git](https://missing.csail.mit.edu/2020/version-control/) and the [Git user's manual](https://www.kernel.org/pub/software/scm/git/docs/user-manual.html), which you may find useful.
-
-The course Git repository is available at [https://github.com/mit-pdos/6.566-lab-2026](https://github.com/mit-pdos/6.566-lab-2026). To get the lab code, log into the VM using the `student` account and clone the source code for lab 1 as follows:
+El repositorio Git del curso está disponible en [https://github.com/nachoparada/IIC2531-26-01-labs](https://github.com/nachoparada/IIC2531-26-01-labs). Para obtener el código del laboratorio, inicia sesión en la VM usando la cuenta `student` y clona el código fuente para el laboratorio 1 de la siguiente manera:
 
 ```
-student@6566-v26:~$ git clone https://github.com/mit-pdos/6.566-lab-2026 lab
+student@6566-v26:~$ git clone https://github.com/nachoparada/IIC2531-26-01-labs lab
 Cloning into 'lab'...
 student@6566-v26:~$ cd lab
 student@6566-v26:~/lab$
 ```
 
-It's important that you clone the course repository into the `lab` directory, because the length of pathnames will matter in this lab.
+Es importante que clones el repositorio del curso en el directorio `lab`, porque la longitud de las rutas de archivos será relevante en este laboratorio.
 
 ---
 
