@@ -53,10 +53,8 @@ style: |
 
 # Separación de Privilegios en OpenSSH
 
-Comenzamos un nuevo módulo: **casos de estudio de diseño de sistemas para seguridad**.
+Comenzamos un nuevo módulo: **casos de estudio de separación de privilegios en aplicaciones**.
 
-* Gran tema en muchos de estos casos de estudio: **separación de privilegios**.
-* La separación de privilegios también es el foco del laboratorio 2.
 
 ---
 
@@ -187,9 +185,9 @@ La mayoría de estas operaciones privilegiadas requieren privilegio root en Unix
 La separación de privilegios define una **nueva interfaz** entre worker y monitor.
 
 * Lista enumerada de operaciones que pueden ser solicitadas.
-  * [ Ref: https://github.com/openssh/openssh-portable/blob/master/monitor.h ]
+  * [Ver lista de operaciones en monitor.h](https://github.com/openssh/openssh-portable/blob/master/monitor.h)
 * El proceso monitor realizará **solo estas operaciones** correspondientes.
-  * [ Ref: https://github.com/openssh/openssh-portable/blob/master/monitor.c ]
+  * [Ver implementación del monitor en monitor.c](https://github.com/openssh/openssh-portable/blob/master/monitor.c)
 
 ---
 
@@ -448,14 +446,14 @@ PRIVSEP(auth_password(authctxt, pwd))
 * Cuando PRIVSEP está deshabilitado: simplemente `auth_password(authctxt, pwd)`.
 * Cuando PRIVSEP está habilitado: `mm_auth_password(authctxt, pwd)`.
 * `mm_auth_password()` es un stub de cliente RPC.
-  * [ Ref: https://github.com/openssh/openssh-portable/blob/master/monitor_wrap.c ]
+  * [Ver stubs RPC del cliente en monitor_wrap.c](https://github.com/openssh/openssh-portable/blob/master/monitor_wrap.c)
 
 ---
 
 # Agregando separación de privilegios (cont.)
 
 **Paso 3:** Enviar estado actual al monitor cuando la autenticación tiene éxito.
-  * [ Ref: https://github.com/openssh/openssh-portable/blob/master/sshd-auth.c llamada a `mm_send_keystate()` ]
+  * [Ver llamada a mm_send_keystate() en sshd-auth.c](https://github.com/openssh/openssh-portable/blob/master/sshd-auth.c)
   * Y correspondientemente, desempaquetar este estado cuando el monitor inicia el nuevo proceso worker.
 
 ---
@@ -495,7 +493,7 @@ PRIVSEP(auth_password(authctxt, pwd))
 * Por razones criptográficas, la compresión pre-autenticación era indeseable.
 * El código de asignación de memoria compartida era complejo.
   * Bugs en él debido a comportamiento indefinido, incluso.
-  * [ Ref: https://github.com/openssh/openssh-portable/commit/0082fba4efdd492f765ed4c53f0d0fbd3bdbdf7f ]
+  * [Commit que removió la memoria compartida de zlib](https://github.com/openssh/openssh-portable/commit/0082fba4efdd492f765ed4c53f0d0fbd3bdbdf7f)
 * Removido en 2016 al no hacer compresión en el proceso slave pre-auth.
 
 ---
@@ -596,7 +594,7 @@ OpenSSH tiene algunos aspectos únicos que influyen en su plan de separación de
 # Otros sistemas son bastante diferentes
 
 Otros sistemas que veremos son bastante diferentes:
-  * **Aplicaciones web:** lab 2 y paper de Google del jueves.
+  * **Aplicaciones web:** lab 2 y paper de Google.
   * Muchos recursos diferentes (autenticación de usuario, bases de datos, servicios, etc.).
   * Servicios con estado (ej., BD) en lugar de iniciar un worker fresco cada vez.
   * Permisos dinámicos (ej., tickets de permiso de usuario de Google).
