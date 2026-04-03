@@ -1,642 +1,909 @@
-Introducción
-------------
+# Lab 2: Separación de Privilegios y Sandboxing del Lado del Servidor
 
-Realizarás una secuencia de laboratorios en IIC2531. Estos laboratorios te darán
-experiencia práctica con ataques comunes y contramedidas. Para hacer los
-problemas concretos, explorarás los ataques y contramedidas en el
-contexto de la aplicación web `zoobar` de las siguientes maneras:
+**Curso**: IIC2531 - Pontificia Universidad Católica de Chile  
+**Semestre**: 2026-1  
+**Número de Lab**: Lab 2
 
-* Lab 1: explorarás la aplicación web zoobar,
-y usarás ataques de Buffer overflow para romper sus propiedades de seguridad.
-* Lab 2: mejorarás la aplicación web `zoobar` usando separación de privilegios,
-de modo que si un componente es comprometido, el adversario no obtenga
-control sobre toda la aplicación web.
-* Lab 3: construirás una herramienta de análisis de programas basada en ejecución simbólica
-para encontrar errores en código Python como la aplicación web zoobar.
-* Lab 4: mejorarás la aplicación `zoobar` contra ataques del navegador.
+---
 
-El Lab 1 te introducirá a las vulnerabilidades de Buffer overflow, en el contexto de un
-servidor web llamado `zookws`. El servidor web `zookws` ejecuta una
-aplicación web Python simple, `zoobar`, con la cual los usuarios transfieren "zoobars"
-(créditos) entre sí. Encontrarás Buffer overflows en
-el código del servidor web `zookws`, escribirás exploits para los Buffer overflows para
-inyectar código en el servidor a través de la red, y descubrirás cómo evadir
-la protección de pila no ejecutable. Los laboratorios posteriores analizarán otros aspectos de seguridad de
-la infraestructura `zoobar` y `zookws`.
 
-Cada laboratorio requiere que aprendas un nuevo lenguaje de programación u otra pieza
-de infraestructura. Por ejemplo, en este laboratorio debes familiarizarte íntimamente
-con ciertos aspectos del lenguaje C, assembly x86, gdb,
-etc. Se necesita familiaridad detallada con muchas piezas diferentes de infraestructura
-para entender ataques y defensas
-en situaciones realistas: las debilidades de seguridad a menudo aparecen en casos extremos, y
-por eso necesitas entender los detalles para crear exploits y diseñar defensas para
-esos casos extremos. Estos dos factores (nueva infraestructura y detalles) pueden hacer
-que los laboratorios consuman mucho tiempo. Deberías comenzar temprano en los laboratorios y trabajar en ellos
-diariamente por un tiempo limitado (cada laboratorio tiene varios ejercicios), en lugar de tratar
-de hacer todos los ejercicios de una sola vez justo antes de la fecha límite. Tómate el tiempo para
-entender los detalles relevantes. Si te quedas atascado, publica una pregunta en Canvas.
+# Lab 2: Separación de privilegios y sandboxing del lado del servidor
 
-Varios laboratorios, incluyendo este, te piden que diseñes exploits. Estos exploits
-son lo suficientemente realistas como para que puedas usarlos para un ataque real, pero
-**no debes hacerlo**. El punto de diseñar exploits es enseñarte
-cómo defenderte contra ellos, no cómo usarlos---atacar sistemas informáticos
-es ilegal
-y puede meterte en serios problemas. No lo hagas.
+## Introducción
 
-Infraestructura del laboratorio
--------------------------------
+Este laboratorio te introducirá a la separación de privilegios y sandboxing del lado del servidor, en el contexto de una aplicación web simple en Python llamada `zoobar`, donde los usuarios transfieren "zoobars" (créditos) entre sí. El objetivo principal de la separación de privilegios es asegurar que si un adversario compromete una parte de la aplicación, el adversario no comprometa las otras partes también. Para ayudarte a separar privilegios en esta aplicación, el servidor web `zookws` está diseñado para ejecutar una aplicación web que consiste en múltiples componentes. Si tienes curiosidad, este diseño está basado en el servidor web [OKWS](https://okws.org/), descrito en un research paper y usado por [okcupid.com](https://www.okcupid.com/). En un sistema moderno a gran escala, el diseño probablemente consistiría en muchas más partes móviles, como usar Kubernetes para ejecutar todos los componentes de tu aplicación, usar una librería RPC como gRPC para comunicarse entre componentes, etc, pero `zookws` empaqueta todo esto en un sistema relativamente simple.
 
-Explotar Buffer overflows requiere control preciso sobre el entorno de
-ejecución. Un pequeño cambio en el compilador, variables de entorno, o
-la forma en que se ejecuta el programa puede resultar en un diseño de memoria
-y estructura de código ligeramente diferente, requiriendo así un exploit diferente. Por esta
-razón, este laboratorio usa una
-[máquina virtual](https://en.wikipedia.org/wiki/Virtual_machine) para
-ejecutar el código del servidor web vulnerable.
+En este laboratorio, configurarás un servidor web con separación de privilegios, examinarás posibles vulnerabilidades, y dividirás el código de la aplicación en componentes con menos privilegios para minimizar los efectos de cualquier vulnerabilidad individual. El laboratorio usará soporte moderno para separación de privilegios, [Linux containers](https://linuxcontainers.org/). (El diseño original de OKWS usaba user IDs y chroot, porque los Linux containers y namespaces no existían en ese momento.)
 
-Para comenzar a trabajar en esta tarea de laboratorio, necesitarás software que te permita ejecutar
-una máquina virtual. Para usuarios de Linux, recomendamos ejecutar la VM del curso en
-[KVM](https://www.linux-kvm.org/), que está integrado en el kernel de Linux.
-KVM debería estar disponible a través de tu distribución, y está preinstalado
-en Debian o Ubuntu, prueba `apt-get install qemu-kvm`. KVM requiere
-soporte de virtualización por hardware en tu CPU, y debes habilitar este soporte en
-tu BIOS (que a menudo, pero no siempre, es el predeterminado). Si tienes otro
-monitor de máquina virtual instalado en tu máquina (por ejemplo, VMware), ese monitor de
-máquina virtual puede agarrar el soporte de virtualización por hardware exclusivamente y
-evitar que KVM funcione.
+También extenderás la aplicación web Zoobar para soportar *perfiles ejecutables*, que permiten a los usuarios usar código Python como sus perfiles. Para crear un perfil, un usuario guarda un programa Python en su perfil en su página principal de Zoobar. (Para indicar que el perfil contiene código Python, la primera línea debe ser `#!python`.) Cada vez que otro usuario vea el perfil Python del usuario, el servidor ejecutará el código Python en ese perfil del usuario para generar la salida del perfil resultante. Esto permitirá a los usuarios implementar una variedad de características en sus perfiles, como:
 
-En Windows, o Linux sin KVM, usa VMware Workstation. En una Mac, usa VMware Fusion. Ambos están gratis en la página de VMware, solo debes registrarte.
+- Un perfil que saluda a los visitantes por su nombre de usuario.
 
-Una vez que tengas software de máquina virtual instalado en tu máquina, deberías
-descargar la [imagen VM del curso](https://drive.google.com/file/d/1aWBjqpDxctl7CejA5TCPyS6t1VcBE3No/view?usp=sharing), y descomprimirla en tu computador. Esta máquina virtual contiene una
-instalación de [Ubuntu](https://ubuntu.com/) 21.10 Linux.
+- Un perfil que mantiene registro de los últimos visitantes a ese perfil.
 
-Para iniciar la VM del curso usando VMware, importa `6.858-x86\_64-v22.vmdk`.
-Ve a File > New, selecciona "create a custom virtual machine", elige Linux > Debian 9.x 64-bit, elige Legacy BIOS, y usa un disco virtual existente
-(y selecciona el archivo `6.858-x86\_64-v22.vmdk`, eligiendo la opción "Take this
-disk away"). Finalmente, haz clic en Finalizar para completar la configuración.
+- Un perfil que da un zoobar a cada visitante (límite 1 por minuto).
 
-Para iniciar la VM con KVM, ejecuta `./6.858-x86\_64-v22.sh` desde una terminal (Ctrl+A x
-para forzar salida). Si obtienes un error de permiso denegado de este script,
-prueba agregándote al grupo kvm con 
-`sudo gpasswd -a 'whoami' kvm`, luego cierra sesión y vuelve a iniciar sesión.
+Soportar esto de manera segura requiere hacer sandboxing del código del perfil en el servidor, para que no pueda realizar operaciones arbitrarias o acceder a archivos arbitrarios. Por otro lado, este código puede necesitar mantener registro de datos persistentes en algunos archivos, o acceder a bases de datos zoobar existentes, para funcionar correctamente. Usarás la librería de llamadas a procedimiento remoto (RPC) y algún código shim que proporcionamos para hacer sandboxing de manera segura de los perfiles ejecutables en el servidor usando WebAssembly.
 
-Si estás usando una computadora con un procesador no-x86 (por ejemplo, laptops Mac
-con el procesador ARM M1), puedes ejecutar la máquina virtual usando qemu.
-Para hacer esto, primero instala [Homebrew](https://brew.sh/), luego instala
-qemu ejecutando [`brew install
-qemu`](https://formulae.brew.sh/formula/qemu), y finalmente edita el script shell `6.858-x86\_64-v22.sh` que era
-parte de la imagen VM del curso, y elimina la bandera `-enable-kvm`. En este
-punto, deberías poder iniciar la VM del curso ejecutando `./6.858-x86\_64-v22.sh`
-como se mencionó anteriormente.
-
-Finalmente, como otra alternativa a usar `qemu` en una computadora no-x86,
-puedes registrarte para una instancia t2.micro de [AWS EC2](https://aws.amazon.com/ec2/?did=ft_card&trk=ft_card),
-bajo su [AWS
-Free Tier](https://aws.amazon.com/ec2/pricing/?loc=ft#Free_tier). Luego puedes ejecutar la VM de la clase dentro de tu instancia AWS EC2,
-usando las direcciones anteriores para una máquina Linux.
-
-Usarás la cuenta de estudiante en la VM para tu trabajo. La contraseña
-para la cuenta de estudiante es 6858. También puedes obtener acceso a
-la cuenta root en la VM usando `sudo`; por ejemplo, puedes
-instalar nuevos paquetes de software usando
-`sudo apt-get install *pkgname*`.
-
-Puedes iniciar sesión en la máquina virtual usando su consola, o usar ssh para
-iniciar sesión en la máquina virtual a través de la red (virtual). Esto último también te permite
-copiar fácilmente archivos dentro y fuera de la máquina virtual con `scp` o
-`rsync`. Cómo accedes a la máquina virtual a través de la red depende de
-cómo la estés ejecutando. Si estás usando VMware, primero tendrás
-que encontrar la dirección IP de la máquina virtual. Para hacerlo, inicia sesión
-en la consola, ejecuta `ip addr show dev eth0`, y
-anota la dirección IP listada junto a inet. Con kvm, puedes usar
-localhost como la dirección IP para ssh y HTTP. Ahora puedes iniciar sesión con
-ssh ejecutando el siguiente comando desde tu máquina host:
-`ssh -p 2222 student@DIRECCIONIP`.
-
-Para evitar tener que escribir la contraseña cada vez, también puedes configurar una
-[Clave SSH](https://www.booleanworld.com/set-ssh-keys-linux-unix-server/).
-
-También puedes encontrar útil crear un alias de host para tu VM 6.858 en
-tu archivo `~/.ssh/config`, para que simplemente puedas ejecutar, por ejemplo,
-`ssh 858vm` o `scp
-file.txt 858vm:lab/file.txt`. Para hacer esto, agrega las siguientes líneas
-a tu archivo `~/.ssh/config`, ajustadas según sea necesario:
+Para obtener el código fuente del laboratorio, usa Git para clonar o actualizar el repositorio del lab y cambia a la rama `lab2`.
 
 ```
-Host 858vm
-  User student
-  HostName localhost
-  Port 2222
-```
-
-Comenzando
------------
-
-Los archivos que necesitarás para este y laboratorios posteriores se distribuyen usando el sistema de control de versiones [Git](https://git-scm.com/). También puedes usar Git para hacer seguimiento de cualquier cambio que hagas al código fuente inicial. Aquí hay una [visión general de Git](https://missing.csail.mit.edu/2020/version-control/) y el [manual del usuario de Git](https://www.kernel.org/pub/software/scm/git/docs/user-manual.html), que puedes encontrar útil.
-El repositorio Git del curso está disponible en https://github.com/nachoparada/IIC2531-labs.git. Para obtener el código del laboratorio, inicia sesión en la VM usando la cuenta |student| y clona el código fuente para el lab 1 de la siguiente manera:
-
-```bash
-student@6858-v22:~$ git clone https://github.com/nachoparada/IIC2531-labs.git lab
-Cloning into 'lab'...
-student@6858-v22:~$ cd lab
-student@6858-v22:~/lab$
-```
-
-Antes de que sigas con este laboratorio, asegurate de que puedas compilar `zookws`:
-
-```bash
-student@6858-v22:~/lab$ make
-cc zookd.c -c -o zookd.o -m64 -g -std=c99 -Wall -D\_GNU\_SOURCE -static -fno-stack-protector
-cc http.c -c -o http.o -m64 -g -std=c99 -Wall -D\_GNU\_SOURCE -static -fno-stack-protector
-cc -m64  zookd.o http.o  -lcrypto -o zookd
-cc -m64 zookd.o http.o  -lcrypto -o zookd-exstack -z execstack
-cc -m64 zookd.o http.o  -lcrypto -o zookd-nxstack
-cc zookd.c -c -o zookd-withssp.o -m64 -g -std=c99 -Wall -D\_GNU\_SOURCE -static
-cc http.c -c -o http-withssp.o -m64 -g -std=c99 -Wall -D\_GNU\_SOURCE -static
-cc -m64  zookd-withssp.o http-withssp.o  -lcrypto -o zookd-withssp
-cc -m64   -c -o shellcode.o shellcode.S
-objcopy -S -O binary -j .text shellcode.o shellcode.bin
-cc run-shellcode.c -c -o run-shellcode.o -m64 -g -std=c99 -Wall -D\_GNU\_SOURCE -static -fno-stack-protector
-cc -m64  run-shellcode.o  -lcrypto -o run-shellcode
-rm shellcode.o
-student@6858-v22:~/lab$
-```
-
-El componente de `zookws` que recibe solicitudes HTTP
-es `zookd`. Está escrito en C y sirve archivos estáticos y ejecuta
-scripts dinámicos. Para este laboratorio no tienes que entender los scripts dinámicos; están escritos en Python y los exploits en este laboratorio se aplican solo al
-código C. El código relacionado con HTTP está en `http.c`.
-[Aquí](http://www.garshol.priv.no/download/text/http-tut.html) hay un
-tutorial sobre el protocolo HTTP.
-
-Hay dos versiones de zookd que usarás:
-
-* `zookd-exstack`
-* `zookd-nxstack`
-
-`zookd-exstack` tiene una pila ejecutable, lo que facilita inyectar código ejecutable dada una vulnerabilidad de buffer overflow de pila. `zookd-nxstack` tiene una pila no ejecutable, y requiere un ataque más sofisticado para explotar buffer overflows de pila.
-
-Para ejecutar el servidor web de manera predecible---de modo que su
-pila y diseño de memoria sea el mismo cada vez---usarás el
-script `clean-env.sh`. Esta es la misma manera en la que
-ejecutaremos el servidor web al revisar las tareas, así que asegúrate de que todos tus exploits
-funcionen en esta configuración!
-
-Los binarios de referencia de zookd se proporcionan en `bin.tar.gz`,
-que usaremos para revisar las tareas. Asegúrate de que tus exploits funcionen en esos binarios.
-El comando make check siempre usará tanto
-`clean-env.sh` como `bin.tar.gz` para verificar tu entrega.
-
-Ahora, asegúrate de que puedes ejecutar el servidor web zookws
-y acceder a la aplicación web `zoobar` desde un navegador
-ejecutándose en tu máquina, de la siguiente manera:
-
-```bash
-student@6858-v22:~/lab$ ./clean-env.sh ./zookd 8080
-```
-
-El comando `./clean-env.sh` inicia zookd en el puerto 8080.
-Para abrir la aplicación zoobar, abre tu navegador y apúntalo a la URL
-`http://DIRECCIONIP:8080/`, donde `DIRECCIONIP` es la dirección IP de la VM. Si algo no parece estar
-funcionando, intenta averiguar qué salió mal, o contacta al personal del curso, antes de
-proceder más lejos.
-
-Parte 1: Encontrando Buffer overflows
-------------------------------------
-
-En la primera parte de esta tarea de laboratorio, encontrarás Buffer overflows
-en el servidor web proporcionado. Para hacer este laboratorio, necesitarás entender
-los conceptos básicos de Buffer overflows. Para ayudarte a comenzar con esto, deberías
-leer [Smashing the Stack in the 21st Century](https://thesquareplanet.com/blog/smashing-the-stack-21st-century/), que revisa los detalles de cómo funcionan los buffer
-overflows, y cómo pueden ser explotados.
-
->**Ejercicio 1.** Estudia el código C del servidor web (en
-`zookd.c` y `http.c`), y encuentra un ejemplo de código que permita
-a un atacante sobrescribir la dirección de retorno de una función. Pista: busca
-buffers asignados en la pila. Escribe una descripción de la vulnerabilidad
-en el archivo `answers.txt`. Para
-tu vulnerabilidad, describe el buffer que puede desbordarse, cómo estructurarías
-la entrada al servidor web (es decir, la solicitud HTTP) para desbordar el
-buffer y sobrescribir la dirección de retorno, y la pila de llamadas que activará
-el Buffer overflow (es decir, la cadena de llamadas de función comenzando
-desde `process_client`).
->
->Vale la pena tomar tu tiempo en este ejercicio y familiarizarte con
-el código, porque tu próximo trabajo es explotar la vulnerabilidad que identificaste.
-De hecho, puedes querer ir y venir entre este ejercicio y ejercicios posteriores,
-mientras trabajas los detalles y los documentas. Es decir, si encuentras un
-Buffer overflow que crees que puede ser explotado, puedes usar ejercicios posteriores para averiguar
-si de hecho puede ser explotado. Será útil dibujar un diagrama de pila como
-las figuras
-en [Smashing the Stack in the 21st Century](https://thesquareplanet.com/blog/smashing-the-stack-21st-century/).
-
-Ahora, comenzarás a desarrollar exploits para aprovechar los buffer
-overflows que has encontrado arriba. Hemos proporcionado código Python de
-para un exploit en `/home/student/lab/exploit-template.py`, que
-emite una solicitud HTTP. La plantilla de exploit toma dos argumentos, el
-nombre del servidor y el número de puerto, así que podrías ejecutarlo de la siguiente manera para emitir una
-solicitud a `zookws` ejecutándose en localhost:
-
-```bash
-student@6858-v22:~/lab$ ./clean-env.sh ./zookd-exstack 8080 &
-[1] 2676
-student@6858-v22:~/lab$ ./exploit-template.py localhost 8080
-HTTP request:
-b'GET / HTTP/1.0
-
-'
+student@6566-v26:~$ cd lab
+student@6566-v26:~/lab$ git fetch
 ...
-student@6858-v22:~/lab$
+student@6566-v26:~/lab$ git checkout -b lab2 origin/lab2
+Branch lab2 set up to track remote branch lab2 from origin.
+Switched to a new branch 'lab2'
 ```
 
-Eres libre de usar este código, o escribir tu propio código de exploit
-desde cero. Ten en cuenta, sin embargo, que si eliges escribir tu propio
-exploit, el exploit debe ejecutarse correctamente dentro de la máquina virtual
-proporcionada.
+Una vez que tu código fuente esté en su lugar, asegúrate de que puedas compilar e instalar el servidor web y la aplicación `zoobar`:
 
-Puedes encontrar `gdb` útil para construir tus exploits (aunque no es
-requerido que lo hagas). Como
-`zookd` crea muchos procesos (uno para cada cliente), puede ser
-difícil depurar el correcto. La forma más fácil de hacer esto es ejecutar el servidor web
-de antemano con `clean-env.sh` y luego adjuntar `gdb`
-a un proceso ya en ejecución con la bandera `-p`. Puedes encontrar el PID
-de un proceso usando `pgrep`; por ejemplo, para adjuntar a
-`zookd-exstack`, inicia el servidor y, en otra shell, ejecuta
-
-```bash
-student@6858-v22:~/lab$ gdb -p $(pgrep zookd-)
+```
+student@6566-v26:~/lab$ make
+cc zookd.c -c -o zookd.o -m64 -g -std=c99 -Wall -Wno-format-overflow -D_GNU_SOURCE -static -fno-stack-protector
+cc http.c -c -o http.o -m64 -g -std=c99 -Wall -Wno-format-overflow -D_GNU_SOURCE -static -fno-stack-protector
 ...
-(gdb) break your-breakpoint
-Breakpoint 1 at 0x1234567: file zookd.c, line 999.
-(gdb) continue
-Continuing.
+cc zookfs.c -c -o zookfs.o -m64 -g -std=c99 -Wall -Wno-format-overflow -D_GNU_SOURCE -static -fno-stack-protector
+cc -m64 zookfs.o http.o -o zookfs
+cc zookd2.c -c -o zookd2.o -m64 -g -std=c99 -Wall -Wno-format-overflow -D_GNU_SOURCE -static -fno-stack-protector
+cc -m64 zookd2.o http.o -o zookd2
+student@6566-v26:~/lab$
 ```
 
-Ten en cuenta que un proceso siendo depurado por `gdb` no
-será terminado incluso si terminas el proceso padre `zookd`
-usando ^C. Si tienes problemas para reiniciar el servidor web,
-verifica si hay procesos sobrantes de la ejecución anterior, o asegúrate de salir
-de `gdb` antes de reiniciar `zookd`. También puedes ahorrarte algo de
-escritura usando `b` en lugar de `break`, y `c` en lugar de
-`continue`.
+## Preludio: ¿Qué es un zoobar?
 
-Cuando un proceso siendo depurado por `gdb` se bifurca, por defecto
-`gdb` continúa depurando el proceso padre y no se adjunta
-al hijo. Como `zookd` bifurca un proceso hijo para atender
-cada solicitud, puedes encontrar útil que `gdb` se adjunte al
-hijo en la bifurcación, usando el comando set `follow-fork-mode` child.
-Hemos agregado ese comando a `/home/student/lab/.gdbinit`, que
-tendrá efecto si inicias `gdb` en ese directorio.
+ Para entender la aplicación `zoobar` en sí, primero examinaremos
+el código de la aplicación web `zoobar`.
 
-Mientras desarrollas tu exploit, puedes descubrir que causa que el servidor
-se quede pegado en lugar de caerse, dependiendo de qué Buffer overflow estés
-intentando aprovechar y qué datos estés sobrescribiendo en el
-servidor en ejecución. Puedes profundizar en los detalles de por qué se queda pegado,
-para entender cómo estás afectando la ejecución del servidor, para
-hacer que tu exploit evite esto y en su lugar bote el servidor.
-O puedes elegir explotar un Buffer overflow diferente que evite
-ese comportamiento.
+Una de las características principales de la aplicación `zoobar` es la capacidad de
+transferir créditos entre usuarios. Esta funcionalidad está implementada por el script
+`transfer.py`.
 
-Para este y ejercicios posteriores, puedes necesitar encodear tu *payload* de ataque
-de diferentes maneras, dependiendo de qué vulnerabilidad estés
-explotando. En algunos casos, puedes necesitar asegurarte de que tu *payload* de ataque
-esté encodeada en URL; es decir, usa `+` en lugar de
-espacio y `%2b` en lugar de `+`. Aquí hay una [referencia de codificación URL](http://www.blooberry.com/indexdot/html/topics/urlencoding.htm) y una [herramienta de conversión útil](https://www.url-encode-decode.com/). También puedes usar funciones de citado en el módulo Python `urllib`
-para codificar bytes en URL (en particular,
-[`urllib.parse.quote_from_bytes`](https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote_from_bytes),
-seguido de `.encode('ascii')` para obtener los bytes de la cadena).
-En otros casos, puedes necesitar incluir
-valores binarios en tu carga útil. El módulo Python
-[struct](https://docs.python.org/3/library/struct.html)
-puede ayudarte a hacer eso. Por ejemplo, `struct.pack("<Q", x)` producirá
-un *encoding* binaria de 8 bytes (64 bits) del entero `x`.
-
-
->**Ejercicio 2.** Escribe un exploit que use un Buffer overflow
-para botar el servidor web (o uno de los procesos que crea).
-No necesitas inyectar código en
-este punto. Verifica que tu *exploit* bote el servidor
-revisando las últimas líneas de `dmesg | tail`, usando
-`gdb`, u observando que el servidor web se cae (es decir, imprimirá
- `Child process 9999 terminated incorrectly, receiving signal 11`)
->
->Proporciona el código para el *exploit* en un archivo llamado `exploit-2.py`.
->
->La vulnerabilidad que encontraste en el Ejercicio 1 puede ser demasiado difícil de explotar.
-Siéntete libre de encontrar y explotar una vulnerabilidad diferente.
-
-Puedes revisar si tus *exploits* botan el servidor de la siguiente manera:
-
-```bash
-student@6858-v22:~/lab$ make check-crash
-```
-
-Parte 2: Inyección de código
------------------------------
-
-En esta parte, usarás tus exploits de Buffer overflow para inyectar
-código en el servidor web.
-El objetivo del código inyectado será desvincular (eliminar) un
-archivo sensible en el servidor, a saber `/home/student/grades.txt`.
-Usa `zookd-exstack`,
-ya que tiene una pila ejecutable que facilita inyectar
-código. El servidor web `zookws` debe iniciarse de la siguiente manera.
-
-```bash
-student@6858-v22:~/lab$ ./clean-env.sh ./zookd-exstack 8080
-```
-
-Puedes construir el exploit en dos pasos. Primero, escribe el código shell
-que desvincula el archivo sensible, a saber `/home/student/grades.txt`.
-Segundo, incrusta el código shell compilado en una solicitud HTTP que
-active el Buffer overflow en el servidor web.
-
-Al escribir código shell, a menudo es más fácil usar lenguaje ensamblador en lugar
-de lenguajes de alto nivel, como C. Esto es porque el exploit
-generalmente necesita control fino sobre el diseño de la pila, valores de registros y tamaño del
-código. El compilador C generará preludios de función adicionales y realizará varias
-optimizaciones, lo que hace que el código binario compilado sea impredecible.
-
-Hemos proporcionado código shell para que uses en
-`/home/student/lab/shellcode.S`, junto con reglas del `Makefile`
-que producen `/home/student/lab/shellcode.bin`, una versión
-compilada del código shell, cuando ejecutes `make`.
-El código shell proporcionado está destinado a explotar binarios setuid-root, y por lo tanto
-ejecuta un shell. Necesitarás modificar este código shell para en su lugar desvincular
-`/home/student/grades.txt`.
-
-Para ayudarte a desarrollar tu código shell para este ejercicio, hemos
-proporcionado un programa llamado `run-shellcode` que ejecutará tu
-código shell binario, como si hubieras saltado correctamente a su punto de inicio.
-Por ejemplo, ejecutarlo en el código shell proporcionado hará que el programa
-ejecute `execve("/bin/sh")`, dándote así otro prompt de shell:
-
-```bash
-student@6858-v22:~/lab$ ./run-shellcode shellcode.bin
-```
-
->**Ejercicio 3 (calentamiento).** Modifica `shellcode.S` para desvincular `/home/student/grades.txt`.
-Tu código ensamblador puede invocar la llamada al sistema `SYS_unlink`,
-o llamar a la función de biblioteca `unlink()`.
-
-Para probar si el código shell hace su trabajo, ejecuta los siguientes comandos:
+Para tener una idea de lo que hace transfer, inicia el sitio web `zoobar`. Para
+el lab 2, iniciamos el web server usando el launcher `zookld.py`, que es
+similar al daemon launcher `okld` en OKWS:
 
 ```
-student@6858-v22:~/lab$ make
-student@6858-v22:~/lab$ touch ~/grades.txt
-student@6858-v22:~/lab$ ./run-shellcode shellcode.bin
-# Asegúrate de que /home/student/grades.txt haya desaparecido
-student@6858-v22:~/lab$ ls ~/grades.txt
-ls: cannot access /home/student/grades.txt: No such file or directory
+student@6566-v26:~/lab$ ./zookld.py
+~base: Creating container
+Unpacking the rootfs
+
+---
+You just created an Ubuntu noble amd64 (20260126_07:42) container.
+
+To enable SSH, run: apt install openssh-server
+No default root or user password are set by LXC.
+~base: Configuring
+... lots of output ...
+main: Creating container
+main: Copying files
+main: Running zooksvc.py
+main: zooksvc.py: dispatcher main, port 8080
+main: zooksvc.py: running ['./zookd2', '3', '5']
+main: zookd2: Start with 1 service(s)
+main: zookd2: Dispatch ^(.*)$ for service 0
+main: zookd2: Host 10.1.1.4 (link 1) service 0
+main: zookd2: Port 8081 for service 0
+zookfs: Creating container
+zookfs: Copying files
+zookfs: Running zooksvc.py
+zookfs: zooksvc.py: running ['./zookfs', '8081']
+echo: Creating container
+echo: Copying files
+echo: Running zooksvc.py
+echo: zooksvc.py: running ['.//zoobar/echo-server.py', '8081']
+echo: Running on port 8081
+student@6566-v26:~/lab$
 ```
 
-Puedes encontrar [strace](https://linux.die.net/man/1/strace) útil
-cuando intentas averiguar qué llamadas al sistema está haciendo tu shellcode. Muy similar
-a `gdb`, adjuntas `strace` a un programa en ejecución:
+La primera vez que ejecutes `zookld.py` tardará minutos,
+ porque está construyendo el container `base`, lo que implica
+ construir una imagen de Linux e instalar todo el software que zoobar
+ necesita. Luego, construye otros tres
+ containers: `main`, `zookfs`, y `echo`.
+ Cada uno de estos containers tiene el contenido de tu directorio `/home/student/lab`
+ copiado en `/app`, para que puedas ejecutar tu código dentro
+ del container.
+ Los containers mismos se almacenan en el directorio `~/.local/share/lxc`,
+ si tienes curiosidad sobre cómo están implementados los containers.
+ `zookld.py`
+ usa `zookconf.py` para construir y configurar los containers.
+ Si obtienes errores sobre crear o iniciar containers, intenta
+ reiniciar el estado del container usando el comando ./zookclean.py
+ y/o reiniciando tu VM.
 
-```bash
-student@6858-v22:~/lab$ strace -f -p $(pgrep zookd-)
-```
+Puedes manipular los containers con los siguientes comandos:
+ 
+ 
+- `zookld.py`: inicia los containers listados en `zook.conf`
+ 
+- `zookps.py`: lista el estado de los containers listados
+ en `zook.conf` y los procesos ejecutándose en ellos.
+ 
+- `zookstop.py`: detiene los containers listados en `zook.conf`
+ 
+- `zookclean.py`: elimina todos los containers de `~/.local/share/lxc`, por si quieres empezar de
+ cero nuevamente.
+ 
+ Cada uno de estos comandos también puede recibir el nombre de un container individual
+ (ej., `main`) y aplicar la operación solo a ese container.
 
-Luego imprimirá todas las llamadas al sistema que hace ese programa. Si tu código
-shell no está funcionando, intenta buscar la llamada al sistema que crees que tu código shell
-debería estar ejecutando (es decir, `unlink`), y ve si tiene los argumentos
-correctos.
+Todos estos comandos son wrappers alrededor de
+ la [API de Python de LXC](https://linuxcontainers.org/lxc/documentation/#python). También puedes ejecutar muchos de los comandos de LXC
+ desde [línea de comandos](https://linuxcontainers.org/lxc/manpages/);
+ en particular, lxc-attach -n name te dará una
+ shell de root en el container `name`, lo cual podrías encontrar útil para depuración.
 
-A continuación, construimos una solicitud HTTP maliciosa que inyecta el código
-byte compilado al servidor web, y secuestra el flujo de control del servidor para
-ejecutar el código inyectado.
-Al desarrollar un *exploit*, tendrás que pensar en qué valores
-están en la pila, para que puedas modificarlos en consecuencia.
-
-Cuando estés construyendo un exploit, a menudo necesitarás conocer las
-direcciones de ubicaciones específicas de la pila, o funciones específicas, en un
-programa en particular. Una forma de hacer esto es agregar declaraciones `printf()`
-a la función en cuestión. Por ejemplo, puedes usar
-`printf("Pointer: %p", &x);` para imprimir la dirección de la variable
-`x` o función `x`. Sin embargo, este enfoque requiere
-cierto cuidado: necesitas asegurarte de que las declaraciones que agregaste no estén
-cambiando por sí mismas el diseño de la pila o el diseño del código. Nosotros (y `make check`) calificaremos el laboratorio sin ninguna
-declaración `printf` que puedas haber agregado.
-
-Un enfoque más a prueba de errores para determinar direcciones es usar
-`gdb`. Por ejemplo, supón que quieres conocer la dirección de pila
-del array `pn[]` en la función `http_serve` en
-`zookd-exstack`, y la dirección de su puntero de retorno guardado. Puedes
-obtenerlos usando `gdb` primero iniciando el servidor web (¡recuerda
-`clean-env`!), y luego adjuntando `gdb` a él:
-
-```bash
-student@6858-v22:~/lab$ gdb -p $(pgrep zookd-)
-...
-(gdb) break http\_serve
-Breakpoint 1 at 0x5555555561c4: file http.c, line 275.
-(gdb) continue
-Continuing.
+ Ejecuta `zookps.py` para ver si tus containers están corriendo. Luego, asegúrate
+de que puedes ejecutar el web server, y acceder al sitio web desde tu navegador, de la
+siguiente manera:
 
 ```
-
-Asegúrate de ejecutar `gdb` desde el directorio `~/lab`, para
-que tome el comando `set follow-fork-mode child` de
-`~/lab/.gdbinit`. Ahora puedes emitir una solicitud HTTP al servidor
-web, para que active el breakpoint, y para que puedas examinar
-la pila de `http_serve`.
-
-```bash
-student@6858-v22:~/lab$ curl localhost:8080
+student@6566-v26:~/lab$ ip addr show dev eth0
+2: eth0: mtu 1500 qdisc fq_codel state UP group default qlen 1000
+ link/ether 00:0c:29:b4:55:8e brd ff:ff:ff:ff:ff:ff
+ altname enp0s3
+ altname ens3
+ inet 192.168.24.128/24 brd 192.168.24.255 scope global eth0
+ valid_lft forever preferred_lft forever
+ inet6 fe80::20c:29ff:feb4:558e/64 scope link
+ valid_lft forever preferred_lft forever
 ```
 
-Esto hará que `gdb` alcance el breakpoint que estableciste y detenga la ejecución, y te dará la oportunidad de preguntarle a `gdb` por las direcciones que te interesan:
+En este ejemplo particular, querrías
+abrir tu navegador e ir a `http://192.168.24.128:8888/zoobar/index.cgi/`,
+o, si estás usando KVM, a `http://localhost:8888/zoobar/index.cgi/`.
+Deberías ver el sitio web de `zoobar`.
 
-```bash
-Thread 2.1 "zookd-exstack" hit Breakpoint 1, http\_serve (fd=4, name=0x55555575fcec "/") at http.c:275
-275         void (*handler)(int, const char *) = http\_serve\_none;
-(gdb) print &pn
-$1 = (char (*)[2048]) 0x7fffffffd4a0
-(gdb) info frame
-Stack level 0, frame at 0x7fffffffdcd0:
- rip = 0x5555555561c4 in http\_serve (http.c:275); saved rip = 0x55555555587b
- called by frame at 0x7fffffffed00
- source language c.
- Arglist at 0x7fffffffdcc0, args: fd=4, name=0x55555575fcec "/"
- Locals at 0x7fffffffdcc0, Previous frame's sp is 0x7fffffffdcd0
- Saved registers:
-  rbx at 0x7fffffffdcb8, rbp at 0x7fffffffdcc0, rip at 0x7fffffffdcc8
-(gdb)
+Nota el puerto diferente, 8888 en lugar de 8080, en las URLs de arriba.
+Esto es porque en realidad queremos conectarnos al container `main`,
+pero está en una virtual network interna que solo es alcanzable
+desde la VM misma. Configuramos el kernel de Linux en la VM para reenviar
+conexiones al puerto 8888 hacia el puerto 8080 en el container `main`.
+Puedes ver las reglas de `iptables` que usamos para lograr esto en
+`/etc/rc.local` en tu VM.
+
+Si tienes problemas para ver el sitio web, verifica que la
+configuración de tu web server no sea demasiado restrictiva.
+
+ 
+
+> Ejercicio 1.
+En tu navegador, conéctate al sitio Web de `zoobar`, y crea dos cuentas de
+usuario. Inicia sesión como uno de los usuarios, y transfiere zoobars de un usuario a
+otro haciendo clic en el enlace de transferencia y llenando el formulario. Juega
+también con las otras características para tener una idea de lo que permite hacer a los usuarios.
+En resumen, un usuario registrado puede actualizar su perfil, transferir
+"zoobars" (créditos) a otro usuario, y consultar el balance de zoobars, perfil,
+y transacciones de otros usuarios en el sistema.
+
+Lee el código de `zoobar` y observa cómo `transfer.py`
+es invocado cuando un usuario envía una transferencia en la página de transferencia. Un buen lugar para
+comenzar en esta parte del laboratorio es `templates/transfer.html`,
+`__init__.py`, `transfer.py`, y `bank.py` en el directorio `zoobar`.
+
+ Nota: No necesitas entregar nada para este ejercicio, ¡pero asegúrate
+de que entiendes la estructura de la aplicación zoobar--te ahorrará
+tiempo en el futuro!
+
+## Separación de privilegios
+
+ Habiendo revisado el código de la aplicación zoobar, vale la pena comenzar a pensar
+sobre cómo aplicar separación de privilegios a la infraestructura de `zookws` y
+`zoobar` para que los errores en la infraestructura no permitan a un
+adversario, por ejemplo, transferir zoobars a la cuenta del adversario.
+
+El web server para este laboratorio usa containers para diferentes partes del web
+server. Los containers están definidos en `zook.conf`. 
+`zookld.py` usa `zookconf.py` para leer `zook.conf`
+(mediante `readconf.py`) y configura los containers. Como parte de este laboratorio
+definirás nuevos containers y modificarás cómo se configuran los containers. Para ese
+propósito necesitas trabajar con LXC y puede resultarte útil consultar la
+documentación de [LXC](https://linuxcontainers.org/lxc/introduction/).
+
+Dos aspectos hacen que la separación de privilegios sea desafiante en el mundo real y en
+ este laboratorio. Primero, la separación de privilegios requiere que desarmes la
+ aplicación y la dividas en piezas separadas. Aunque hemos intentado
+ estructurar bien la aplicación para que sea fácil de dividir, hay lugares
+ donde debes rediseñar ciertas partes para hacer posible la separación de privilegios.
+ Segundo, debes asegurar que cada pieza se ejecute con privilegios mínimos, lo que
+ requiere establecer permisos precisamente y configurar las piezas
+ correctamente. Con suerte, al final de este laboratorio, tendrás una mejor
+ comprensión de por qué muchas aplicaciones tienen vulnerabilidades de seguridad relacionadas
+ con fallos en separar apropiadamente los privilegios: ¡la separación de privilegios adecuada es
+ difícil!
+
+Un problema que podrías encontrar es que es complicado depurar una aplicación compleja
+ que está compuesta de muchas piezas. Para ayudarte, hemos proporcionado
+ una biblioteca de depuración simple en `debug.py`, que es importada por cada
+ script de Python que te damos. La biblioteca `debug` proporciona una única
+ función, `log(msg)`, que imprime el mensaje `msg` a
+ stderr (que debería ir a la terminal donde ejecutaste `zookld`),
+ junto con un rastreo de pila de dónde se llamó la función `log`.
+
+Toda la salida del código que se ejecuta en varios containers que ves en tu
+ terminal también debería estar prefijada con el nombre del container.
+ Por ejemplo, cuando ves main: zookd2: Forwarding to 10.1.1.4:8081
+ for /zoobar/media/zoobar.css, significa que el mensaje viene del
+ container `main`.
+
+Si algo no parece estar funcionando, intenta descubrir qué salió mal, o
+contacta al instructor del curso o los ayudantes, antes de continuar.
+
+## Parte 1: Separar privilegios en la configuración del web server usando containers
+
+ Anteriormente, `zookws` consistía esencialmente en un proceso:
+ `zookd`. Desde el punto de vista de seguridad, esta estructura no es ideal:
+ por ejemplo, cualquier desbordamiento de búfer podría usarse para tomar
+ control de `zookws`. Por ejemplo, puedes invocar los scripts dinámicos con
+ argumentos de tu elección (ej., darte muchos zoobars a ti mismo), o más simple,
+ simplemente escribir la base de datos que contiene las cuentas de zoobar directamente.
+
+Este laboratorio refactoriza `zookd`
+siguiendo el diseño de [OKWS](https://okws.org/). Similar a OKWS,
+`zookws` consiste en un programa lanzador `zookld.py` que
+inicia servicios configurados en el archivo `zook.conf`, un
+`zookd` que solo enruta solicitudes a los servicios correspondientes, así como
+varios servicios. Por simplicidad `zookws` no implementa daemons auxiliares o
+de registro como lo hace OKWS. Puedes pensar en `zookld.py` como una versión
+minimalista de Kubernetes.
+
+ 
+Ejecutaremos cada componente en un container Linux separado. Los containers Linux
+ proporcionan la ilusión de una máquina Linux virtual sin usar máquinas virtuales;
+ están implementados usando procesos Linux. Un proceso en un container está
+ más fuertemente aislado que los procesos Linux estándar: un proceso dentro de un container
+ tiene acceso limitado a espacios de nombres del kernel, tiene acceso limitado a llamadas al sistema,
+ y no tiene acceso al sistema de archivos. En muchos sentidos, se comportan como máquinas
+ virtuales: se inician desde una imagen de VM, tienen su propia dirección IP, su
+ propio sistema de archivos, etc. Les asignas direcciones IP, copias los archivos correctos
+ en ellos, y organizas llamadas de procedimiento remoto entre ellos.
+
+ 
+Usaremos containers *no privilegiados*, que se ejecutan como un proceso
+ de usuario no privilegiado (es decir, no root). Incluso si el proceso que se ejecuta dentro del
+ container se ejecuta con privilegios de root, el container mismo se ejecuta como un
+ usuario no privilegiado.
+
+ 
+Con containers, incluso si hay un exploit (ej., otro desbordamiento de búfer
+ en `zookd`), el container ejecutando `zookd` le dará al atacante
+ poco control. Por ejemplo, tomar control de `zookd`, no permitirá al
+ atacante invocar los scripts dinámicos o escribir directamente la base de datos que se ejecuta
+ dentro de otro container. Además, `zookd` no puede escapar de su
+ container y tomar control sobre el kernel Linux subyacente.
+
+El archivo `zook.conf` es el archivo de configuración que especifica cómo
+debe ejecutarse cada container. Por ejemplo, la entrada `main`:
 
 ```
-
-De esto, puedes decir que, al menos para esta invocación de
-`http_serve`, el buffer `pn[]` en la pila vive en la
-dirección `0x7fffffffd4a0`, y el valor guardado de `%rip` (la
-dirección de retorno en otras palabras) está en `0x7fffffffdcc8`. Si quieres
-ver el contenido de los registros, también puedes usar `info registers`.
-
-Ahora es tu turno de desarrollar un exploit.
-
->**Ejercicio 4.** Comenzando desde uno de tus exploits del Ejercicio 2, construye un
-exploit que secuestre el flujo de control del servidor web y desvincule
-`/home/student/grades.txt`. Guarda este exploit en un archivo
-llamado `exploit-4.py`.
->
->Verifica que tu exploit funcione; necesitarás recrear
-`/home/student/grades.txt` después de cada ejecución exitosa del exploit.
->
->Sugerencia: primero enfócate en obtener control del contador del programa.
-Dibuja el diseño de la pila que esperas que el programa tenga
-en el punto cuando desbordes el buffer, y usa `gdb`
-para verificar que tus datos de desbordamiento terminen donde esperas que
-estén. Avanza paso a paso por la ejecución de la función hasta la instrucción
-de retorno para asegurarte de que puedes controlar a qué dirección el programa
-retorna. Los comandos `next`, `stepi`, y [`x`](https://visualgdb.com/gdbreference/commands/x) en
-gdb deberían resultar útiles.
->
->Una vez que puedas secuestrar de manera confiable el flujo de control del programa,
-encuentra una dirección adecuada que contendrá el código que quieres
-ejecutar, y enfócate en colocar el código correcto en esa
-dirección---por ejemplo, una derivación del código shell proporcionado.
-
-Puedes asegurarte de que tu *exploit* funciona de la siguiente manera:
-
-```bash
-student@6858-v22:~/lab$ make check-exstack
+[main]
+ cmd = zookd2
+ dir = /app
+ lxcbr = 0
+ port = 8080
+ http_svcs = zookfs
 ```
 
-La prueba imprime "PASS" o "FAIL".
-Calificaremos tus exploits de esta manera. No cambies el `Makefile`.
+especifica que el comando para ejecutar main es `zookd2`, en el directorio
+`/app` en un container conectado a la virtual network 0
+(lxcbr, abreviatura de LXC bridge), y
+que `cmd` obtiene el puerto 8080 para recibir/enviar solicitudes.
 
-El compilador C estándar usado en Linux, gcc, implementa una versión de
-canarios de pila (llamada SSP). Puedes explorar si la versión de GCC de
-canarios de pila prevendría o no una vulnerabilidad dada usando
-las versiones habilitadas para SSP de `zookd`: `zookd-withssp`.
+En la VM del laboratorio que estás usando, pre-creamos 10 virtual networks,
+`lxcbr0` hasta `lxcbr9`, que puedes usar, correspondientes
+a las direcciones de red `10.1.0.*` hasta `10.1.9.*`
+respectivamente (o `10.1.0.0/24` hasta `10.1.9.0/24` en notación
+[CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing)).
+Cada container obtiene la dirección IP `.4` en la subred de su virtual
+network; por ejemplo, si asignas algún servicio a `lxcbr = 7`,
+tendrá la dirección IP `10.1.7.4`.
 
-Parte 3: Ataques de retorno a libc
-----------------------------------
+La razón de tener múltiples virtual networks es proporcionar un fuerte aislamiento
+de red entre containers. Los containers conectados a la misma virtual network
+pueden enviarse paquetes directamente, y un container comprometido podría falsificar
+paquetes desde la dirección IP de otro container. Por otro lado, los containers
+en diferentes virtual networks deben pasar por el kernel de Linux del host para enrutar
+paquetes, y el kernel de Linux asegura que los paquetes provenientes de una virtual
+network no falsifiquen una dirección de origen de una virtual network diferente (habilitado
+por la opción del kernel [`rp_filter`](https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt)).
 
-Muchos sistemas operativos modernos marcan la pila como no ejecutable en
-un intento de hacer más difícil explotar Buffer overflows.
-En esta parte, explorarás cómo se puede evadir este mecanismo de protección.
-Ejecuta el servidor web configurado con binarios
-que tienen una pila no ejecutable, de la siguiente manera.
+Por defecto, cada container permite paquetes entrantes de cualquier otro
+container. Restringirás esto más adelante en el laboratorio, y el uso de
+virtual networks separadas asegurará que un container comprometido no pueda
+evadir estas restricciones a nivel de red.
 
-```bash
-student@6858-v22:~/lab$ ./clean-env.sh ./zookd-nxstack 8080
+El archivo `zook.conf` configura solo un servicio HTTP (a través de
+la línea `http_svcs`), `zookfs`, que tanto sirve archivos
+estáticos como ejecuta scripts dinámicos. Más adelante en este laboratorio, necesitarás
+ejecutar múltiples servicios HTTP, lo cual puedes hacer listándolos todos,
+separados por coma, en la línea `http_svcs`; por ejemplo,
+`http_svcs = first,second,third`.
+
+El servicio `zookfs` funciona
+invocando el ejecutable `zookfs`, que corre en el directorio
+`/app` en el container conectado a `lxcbr = 1`
+(y por lo tanto con dirección IP 10.1.1.4).
+
+Las líneas `fwrule` que ves comentadas en la descripción del servicio
+`zookfs` en `zook.conf`
+especifican filtros que controlan la comunicación hacia ese container:
+
+```
+[zookfs]
+ cmd = zookfs
+ url = .*
+ dir = /app
+ lxcbr = 1
+ port = 8081
+ ## Filter rules are inserted in the order they appear in this file.
+ ## Thus, in the below example (commented out initially) the first
+ ## filters applied are the ACCEPT ones, and then the REJECT one.
+ ## Use `iptables -nvL INPUT' on the appropriate container to see all
+ ## the filters that are in effect on that container.
+ # fwrule = -s main -j ACCEPT
+ # fwrule = -s echo -j ACCEPT
+ # fwrule = -j REJECT
 ```
 
-La observación clave para explotar Buffer overflows con una
-pila no ejecutable es que aún controlas el contador del programa,
-después de que una instrucción `ret` salte a una dirección que colocaste
-en la pila. Aunque no puedes saltar a la dirección del
-buffer desbordado (no será ejecutable), usualmente hay suficiente
-código en el espacio de direcciones del servidor vulnerable para realizar la operación
-que quieres.
+Por ejemplo, las reglas comentadas permiten paquetes de los containers `main`
+y `echo`, pero bloquean todos los demás paquetes. Cambiarás
+estas reglas (y definirás reglas similares para otros containers)
+a medida que separemos más privilegios de zookws.
 
-Así, para evadir una pila no ejecutable, necesitas primero encontrar el código
-que quieres ejecutar. Esto a menudo es una función en la biblioteca estándar,
-llamada `libc`, como `execve`, `system`, o `unlink`.
-Luego, necesitas arreglar para que la pila y los registros estén en un estado
-consistente con llamar a esa función con los argumentos deseados.
-Finalmente, necesitas arreglar para que la instrucción `ret` salte
-a la función que encontraste en el primer paso. Este ataque a menudo
-se llama un ataque de *retorno a libc*.
+Comenzaremos a separar más privilegios del servicio `zookfs` que
+maneja tanto archivos estáticos como scripts dinámicos. Aunque corre en un container,
+algunos scripts de Python podrían fácilmente tener vulnerabilidades de seguridad; un script de Python vulnerable
+podría ser engañado para eliminar archivos estáticos importantes que el server está
+sirviendo. Por el contrario, el código de servicio de archivos estáticos podría ser engañado para servir
+las bases de datos usadas por los scripts de Python, como `person.db`
+y `transfer.db`. Una mejor organización es dividir `zookfs`
+en dos servicios, uno para archivos estáticos y otro para scripts de Python,
+ejecutándose como diferentes usuarios.
 
-Un desafío con los ataques de `retorno a libc` es que necesitas pasar argumentos a
-la función `libc` que quieres invocar. Las convenciones de llamada x86-64 hacen
-que esto sea un desafío porque los primeros 6 argumentos [se
-pasan en registros](https://eli.thegreenplace.net/2011/09/06/stack-frame-layout-on-x86-64).
-Por ejemplo, el primer argumento debe estar en el registro `%rdi`
-(ver `man 2 syscall`, que documenta la convención de llamada). Así, necesitas
-una instrucción que cargue el primer argumento en `%rdi`. En
-el Ejercicio 3, podrías haber puesto esa instrucción en el buffer que tu exploit
-desborda. Pero, en esta parte del laboratorio, la pila está marcada como no ejecutable, así que
-ejecutar la instrucción haría que el servidor se bloquee, pero no ejecutaría la
-instrucción.
-
-La solución a este problema es encontrar una pieza de código en el servidor que
-cargue una dirección en `%rdi`. Tal pieza de código se refiere como un
-"fragmento de código prestado", o más generalmente como un [*gadget
-rop*](https://en.wikipedia.org/wiki/Return-oriented_programming), porque es una herramienta para programación orientada a retorno (rop).
-Afortunadamente, `zookd.c` accidentalmente tiene un gadget útil: ve la función
-`accidentally`.
-
->**Ejercicio 5.** Comenzando desde tu exploit en los Ejercicios
-2 y 4, construye un exploit que desvincule
-`/home/student/grades.txt` cuando se ejecute en los binarios que tienen una
-pila no ejecutable. Nombra este nuevo exploit `exploit-5.py`.
+> 
 >
->En este ataque vas a tomar control del servidor a través de
-la red *sin inyectar ningún código* en el servidor. Deberías usar un
-ataque de retorno a libc donde redirijas el flujo de control al código que ya
-existía antes de tu ataque. El esquema del ataque es realizar un buffer
-overflow que:
+>Ejercicio 2.
+>Modifica `zook.conf` para reemplazar `zookfs` con
+>dos servicios separados, `dynamic` y `static`.
+>Ambos deben usar `cmd = zookfs`.
 >
->1. cause que el argumento a la función libc elegida esté en la pila
->2. luego cause que `accidentally` se ejecute para que ese argumento termine en `%rdi`
->3. y luego cause que `accidentally` retorne a la función libc elegida
+>`dynamic` debe ejecutar solo `/zoobar/index.cgi`
+>(que ejecuta todos los scripts de Python), pero no debe servir ningún archivo
+>estático.
+>`static` debe servir archivos estáticos pero no ejecutar nada.
 >
->Será útil dibujar un diagrama de pila como
-las figuras en [Smashing the Stack in the 21st Century](https://thesquareplanet.com/blog/smashing-the-stack-21st-century/) en (1)
-el punto que el Buffer overflow ocurre y (2) en el punto que
-`accidentally` se ejecuta.
+>Para eliminar el container `zookfs` para que `zookld.py`
+>no lo inicie, ejecuta ./zookclean.py zookfs.
+>
+>Ejecuta los servicios dynamic y static en diferentes virtual networks.
+>
+>Esta separación requiere que `zookd` determine qué
+>servicio debe manejar una solicitud particular.
+>Puedes usar el filtrado de URL de `zookws` para hacer esto,
+>sin modificar la aplicación ni las URLs que usa.
+>Los filtros de URL se especifican en `zook.conf`,
+>y soportan expresiones regulares.
+>Por ejemplo, `url = .*` coincide con todas las solicitudes, mientras que
+>`url = /zoobar/(abc|def)\.html` coincide con solicitudes
+>a `/zoobar/abc.html` y `/zoobar/def.html`.
+>
+>Para este ejercicio, solo debes modificar `zook.conf`; no modifiques ningún código C o
+>Python.
+>
+>Ejecuta make check-lab2 para verificar que
+>tu configuración modificada pasa nuestras pruebas.
 
-Puedes probar tus exploits de la siguiente manera:
+Nos gustaría controlar con quién pueden comunicarse dynamic y static. Por
+ ejemplo, incluso si `static` fuera comprometido, queremos que el atacante sea
+ incapaz de comunicarse con `dynamic`, haciendo más difícil para el atacante
+ comprometer `dynamic` también. Por lo tanto, nos gustaría configurar reglas de
+ firewall en cada container para hacer cumplir este aislamiento. Usaremos
+ [`iptables`](https://wiki.archlinux.org/index.php/iptables)
+ para insertar reglas de filtro en cada container, de modo que `static` solo
+ acepte paquetes de `main` (que ejecuta `zookd`). Esto asegura
+ que `dynamic` no pueda enviar paquetes directamente a `static`.
+ De manera similar, `dynamic` solo debe aceptar paquetes de `main`,
+ y no de `static`. Configurar reglas de seguridad como estas a menudo se
+ denomina segregación de red.
 
-```bash
-student@6858-v22:~/lab$ make check-libc
+ 
+> 
+> Ejercicio 3.
+> Escribe entradas `fwrule` apropiadas
+> para `main`, `static`, y `dynamic` para limitar la
+> comunicación como se especificó anteriormente.
+
+ 
+Si configuras los filtros incorrectamente, podrías ser incapaz de conectarte con algún
+ container. Puedes restablecer el firewall para permitir toda
+ comunicación deteniendo e iniciando los containers nuevamente,
+ usando `zookstop.py` seguido de `zookld.py`.
+## Interludio: Biblioteca RPC
+ 
+
+ En esta parte, separarás por privilegios la aplicación `zoobar`
+en varios procesos, ejecutándose en diferentes containers. Nos gustaría
+limitar el daño de cualquier bug futuro que aparezca. Es decir, si una parte
+de la aplicación `zoobar` tiene un bug explotable, nos gustaría prevenir que
+un atacante use ese bug para comprometer otras partes de la aplicación
+`zoobar`.
+
+Un desafío al dividir la aplicación `zoobar` en varios containers
+es que los procesos dentro de los containers deben tener una forma de comunicarse entre
+sí. Primero estudiarás una biblioteca de Remote Procedure Call (RPC) que permite
+que los procesos se comuniquen. Luego, usarás esa biblioteca para
+separar `zoobar` en varios procesos, cada uno dentro de su propio container,
+que se comunican usando RPC.
+
+Para ilustrar cómo podría usarse nuestra biblioteca RPC, hemos implementado un simple
+servicio "echo" para ti, en `zoobar/echo-server.py`. Este servicio es
+invocado por `zookld` y se ejecuta dentro de su propio container; busca
+la sección `echo` de `zook.conf` para ver cómo se inicia.
+
+`echo-server.py` está implementado definiendo una clase RPC
+`EchoRpcServer` que hereda de `RpcServer`, que a su vez
+viene de `zoobar/rpclib.py`. La clase RPC `EchoRpcServer`
+define los métodos que el server soporta, y `rpclib` invoca esos
+métodos cuando un cliente envía una solicitud. El server define un método simple que
+hace eco de la solicitud de un cliente.
+
+`echo-server.py` inicia el server llamando a
+`run_fork(port)`. Esta función escucha en un
+socket TCP. El puerto viene del argumento, que en
+este caso es `8081` (especificado en `zook.conf`).
+Cuando un cliente se conecta a este socket, la función hace fork del proceso
+actual. Una copia del proceso recibe mensajes y responde en
+la conexión recién abierta, mientras que el otro proceso escucha por otros
+clientes que podrían abrir el socket.
+
+También hemos incluido un cliente simple de este servicio `echo` como parte
+de la aplicación web Zoobar. En particular, si vas a la
+URL `/zoobar/index.cgi/echo?s=hello`, la solicitud es enrutada
+a `zoobar/echo.py`. Ese código usa el cliente RPC (implementado
+por `rpclib`) para conectarse al servicio echo en (dirección IP del host,
+puerto). El cliente busca la (dirección IP del host, puerto)
+en `zook.conf`. El cliente invoca la operación `echo`. Una vez que
+recibe la respuesta del servicio echo, devuelve una página web que contiene
+la respuesta en eco.
+
+El código del lado cliente RPC en `rpclib` está implementado por el
+método `call` de la clase `RpcClient`. Este método
+formatea los argumentos en un string, escribe el string en la conexión
+al server, y espera una respuesta (un string). Al recibir la
+respuesta, `call` parsea el string, y devuelve los resultados al
+llamador.
+
+## Parte 2: Separación de privilegios del servicio de login en Zoobar
+
+Ahora usaremos la biblioteca RPC para mejorar la seguridad de las contraseñas
+de usuario almacenadas en la aplicación web Zoobar. Ahora mismo, un adversario que
+explota una vulnerabilidad en cualquier parte de la aplicación Zoobar puede obtener todas
+las contraseñas de usuario de la base de datos `person`.
+
+El primer paso para proteger las contraseñas será crear un servicio
+que maneje las contraseñas de usuario y cookies, de modo que solo ese servicio
+pueda acceder a ellas directamente, y el resto de la aplicación Zoobar no pueda.
+En particular, queremos separar el código que maneja la autenticación de usuarios
+(es decir, contraseñas y tokens) del resto del código de la aplicación. La
+aplicación `zoobar` actual almacena todo sobre el usuario (su perfil,
+su saldo de zoobar, e información de autenticación) en la tabla `Person`
+(ver `zoodb.py`). Queremos mover la información de autenticación fuera de
+la tabla `Person` a una tabla `Cred` separada (Cred significa
+Credenciales), y mover el código que accede a esta información de
+autenticación (es decir, `auth.py`) a un servicio separado.
+
+Ten en cuenta que no es completamente necesario dividir los datos en
+ tablas separadas por seguridad: cada container terminaría con su
+ propia copia de la base de datos, y no tendría datos en las partes de la
+ base de datos que nunca pobló. Dividimos los datos en tablas
+ separadas de todos modos, porque ayuda a entender cómo dividir los servicios
+ correctamente.
+
+Específicamente, tu trabajo será el siguiente:
+
+ 
+- Decidir qué interfaz debería proporcionar tu servicio de autenticación
+	(es decir, qué funciones ejecutará para los clientes). Mira el
+	código en `login.py` y `auth.py`, y decide qué
+	necesita ejecutarse en el servicio de autenticación, y qué puede ejecutarse en
+	el cliente (es decir, ser parte del resto del código de zoobar). Ten
+	en cuenta que tu objetivo es proteger tanto las contraseñas como los tokens.
+	Hemos proporcionado stubs RPC iniciales para el cliente en el archivo
+	`zoobar/auth_client.py`.
+
+ 
+- Crear un nuevo servicio `auth` para autenticación de usuarios, siguiendo la línea de
+	`echo-server.py`. Hemos proporcionado un archivo inicial para
+	ti, `zoobar/auth-server.py`, que deberías modificar para
+	este propósito. La implementación de este servicio debería usar las
+	funciones existentes en `auth.py`.
+
+ 
+- Modificar `zook.conf` para iniciar el `auth-server`
+	apropiadamente (en un container en una virtual network diferente).
+
+ 
+- Separar las credenciales de usuario (es decir, contraseñas y tokens) de
+	la base de datos `Person` a una base de datos `Cred`
+	separada, almacenada en `/zoobar/db/cred`. No mantengas ninguna
+	contraseña o token en la antigua base de datos `Person`.
+
+ 
+- Modificar el código de login en `login.py` para invocar tu
+	servicio auth en lugar de llamar a `auth.py` directamente.
+
+> 
+
+>Ejercicio 4.
+>Implementa la separación de privilegios para la autenticación de usuarios, como se describe arriba.
+>
+>Un buen punto de partida sería primero separar las credenciales
+>originalmente almacenadas en la base de datos `Person` en una base de datos
+>`Cred` separada, pero aún hacer todo en el servicio `dynamic`.
+>No olvides crear una entrada regular en la base de datos `Person`
+>para los usuarios recién registrados.
+>
+>Una vez que eso funcione, añade llamadas de función explícitas entre el código que
+>esperas que aún viva en el servicio `dynamic` (que no
+>toca `Cred`) y las funciones que eventualmente moverás
+>a `auth-server` (que sí toca `Cred`). Asegúrate de que
+>esto funcione con solo funciones primero, sin realmente mover el código
+>a un `auth-server` separado.
+>
+>Finalmente, configura el `auth-server.py` para ejecutar el código que maneja la
+>base de datos `Cred`, y convierte las llamadas de función del paso
+>anterior en RPCs reales a `auth-server`.
+>
+>Ejecuta make check-lab2 para verificar que
+>tu servicio de autenticación con separación de privilegios pasa nuestras pruebas.
+
+> 
+> Ejercicio 5.
+> Especifica las entradas `fwrule` apropiadas para `auth`.
+
+	
+
+Ahora, mejoraremos aún más la seguridad de las contraseñas, usando
+hashing y salting. El código de autenticación actual almacena una copia exacta
+de la contraseña del usuario en la base de datos. Por lo tanto, si un adversario
+de alguna manera obtiene acceso al archivo `cred.db`, todas las contraseñas
+de usuario serán comprometidas inmediatamente. ¡Peor aún, si los usuarios tienen
+la misma contraseña en múltiples sitios, el adversario podrá
+comprometer las cuentas de los usuarios allí también!
+
+El hashing protege contra este ataque, almacenando un hash de la contraseña
+del usuario (es decir, el resultado de aplicar una función hash a la contraseña),
+en lugar de la contraseña en sí. Si la función hash es difícil de
+invertir (es decir, es un hash criptográficamente seguro), un adversario no
+podrá obtener directamente la contraseña del usuario. Sin embargo, un server
+aún puede verificar si un usuario proporcionó la contraseña correcta durante el login:
+simplemente calculará el hash de la contraseña del usuario, y verificará si el valor hash
+resultante es el mismo que se almacenó previamente.
+
+Una debilidad del hashing es que un adversario puede construir una tabla
+gigante (llamada "tabla rainbow"), que contiene los hashes de todas las
+contraseñas posibles. Entonces, si un adversario obtiene la contraseña hasheada de alguien,
+el adversario puede simplemente buscarla en su tabla gigante, y obtener la
+contraseña original.
+
+Para derrotar el ataque de tabla rainbow, la mayoría de los sistemas usan *salting*.
+Con salting, en lugar de almacenar un hash de la contraseña, el server
+almacena un hash de la contraseña concatenada con un string generado aleatoriamente
+(llamado salt). Para verificar si la contraseña es correcta, el server
+concatena la contraseña proporcionada por el usuario con el salt, y verifica si el
+resultado coincide con el hash almacenado. ¡Ten en cuenta que, para que esto funcione, el server
+debe almacenar el valor del salt usado para calcular originalmente el hash con salt!
+Sin embargo, debido al salt, el adversario ahora tendría que generar
+una tabla rainbow separada para cada valor de salt posible. Esto aumenta enormemente
+la cantidad de trabajo que el adversario tiene que realizar para
+adivinar las contraseñas de los usuarios basándose en los hashes.
+
+Una consideración final es la elección de la función hash. La mayoría de las funciones
+hash, como MD5 y SHA1, están diseñadas para ser rápidas. Esto significa que
+un adversario puede probar muchas contraseñas en un corto período de tiempo, ¡lo cual
+no es lo que queremos! En cambio, deberías usar una función especial tipo hash
+que está explícitamente diseñada para ser *lenta*. Un buen ejemplo de tal
+función hash es [PBKDF2](https://en.wikipedia.org/wiki/PBKDF2),
+que significa Password-Based Key Derivation Function (versión 2).
+
+> 
+
+>Ejercicio 6.
+>Implementa hashing y salting de contraseñas en tu servicio de autenticación.
+>En particular, necesitarás extender tu tabla `Cred` para incluir
+>una columna `salt`; modificar el código de registro para elegir un salt
+>aleatorio, y almacenar un hash de la contraseña junto con el salt, en lugar
+>de la contraseña en sí; y modificar el código de login para calcular el hash de la
+>contraseña proporcionada junto con el salt almacenado, y compararla con el
+>hash almacenado. No elimines la columna de contraseña de la tabla `Cred`
+>(la verificación del ejercicio 5 requiere que esté presente); puedes almacenar
+>la contraseña hasheada en la columna `password` existente.
+
+>Para implementar hashing con PBKDF2, puedes usar el
+>[módulo Python PBKDF2](https://www.dlitz.net/software/python-pbkdf2/). A grandes rasgos, deberías hacer `import pbkdf2`, y luego calcular el hash de
+>una contraseña usando `pbkdf2.PBKDF2(password, salt).hexread(32)`.
+>Hemos proporcionado una copia de `pbkdf2.py` en el directorio `zoobar`.
+>No uses la función `random.random` para generar un salt
+>ya que [la documentación del módulo random](https://docs.python.org/3/library/random.html)
+>indica que no es criptográficamente seguro. Una alternativa segura es
+>la función `os.urandom`.
+>
+>Ejecuta make check-lab2 para verificar que tu
+>código de hashing y salting pasa nuestras pruebas. Ten en cuenta que nuestras pruebas
+>no son exhaustivas.
+
+Un efecto secundario sorprendente de usar una función hash computacionalmente muy costosa
+como PBKDF2 es que un adversario ahora puede usar esto
+para lanzar ataques de denegación de servicio (DoS) en la CPU del server.
+Por ejemplo, el popular framework web Django publicó un [aviso de
+seguridad](https://www.djangoproject.com/weblog/2013/sep/15/security/) sobre esto, señalando que si un adversario intenta iniciar sesión
+en alguna cuenta proporcionando una contraseña muy grande (1MB de tamaño),
+el server pasaría un minuto entero tratando de calcular PBKDF2 sobre esa
+contraseña. La solución de Django es limitar las contraseñas proporcionadas a un máximo de 4KB
+de tamaño. Para este laboratorio, no requerimos que manejes tales ataques DoS.
+
+## Parte 3: Separación de privilegios del banco en Zoobar
+
+Finalmente, queremos proteger el saldo de zoobars de cada usuario de
+adversarios que podrían explotar algún bug en la aplicación Zoobar.
+Actualmente, si un adversario explota un bug en la aplicación principal de Zoobar,
+pueden robar los zoobars de cualquier otra persona, y esto ni siquiera aparecería
+en la base de datos `Transfer` si quisiéramos auditar las cosas más tarde.
+
+Para mejorar la seguridad de los saldos de zoobar, nuestro plan es similar a lo que
+hiciste anteriormente en el servicio de autenticación: separar la información del
+saldo `zoobar` en una base de datos `Bank` separada, y configurar
+un servicio `bank`, cuyo trabajo es realizar operaciones en la
+nueva base de datos `Bank` y la base de datos `Transfer` existente.
+Mientras solo el servicio `bank` pueda modificar las bases de datos `Bank`
+y `Transfer`, los bugs en el resto de la aplicación Zoobar
+no deberían dar a un adversario la capacidad de modificar saldos de zoobar, y
+asegurarán que todas las transferencias se registren correctamente para futuras auditorías.
+
+> 
+
+>Ejercicio 7.
+>Separa por privilegios la lógica del banco en un servicio `bank` separado, siguiendo
+>las líneas del servicio de autenticación. Tu servicio debe implementar
+>las funciones `transfer` y `balance`, que actualmente están
+>implementadas por `bank.py` y se llaman desde varios lugares en el
+>resto del código de la aplicación.
+>
+>Debes separar la información del saldo `zoobar` en
+>una base de datos `Bank` separada (en `zoodb.py`);
+>implementar el server del banco modificando `bank-server.py`;
+>agregar el servicio bank a `zook.conf`;
+>crear stubs de cliente RPC para invocar el servicio bank;
+>y modificar el resto del código de la aplicación para invocar los stubs RPC
+>en lugar de llamar directamente a las funciones de `bank.py`.
+>
+>No olvides manejar el caso de creación de cuenta, cuando el nuevo usuario
+>necesita obtener 10 zoobars iniciales. Esto puede requerir que cambies la
+>interfaz del servicio bank.
+>
+>Ejecuta make check-lab2 para verificar que
+>tu servicio bank con separación de privilegios pasa nuestras pruebas.
+
+Finalmente, necesitamos solucionar un problema más con el servicio bank.
+En particular, un adversario que puede acceder al servicio bank (es decir,
+puede enviarle solicitudes RPC) puede realizar transferencias desde la cuenta
+de *cualquiera* a la suya propia. Por ejemplo, puede robar 1 zoobar de cualquier víctima
+simplemente emitiendo una solicitud RPC `transfer(victim, adversary, 1)`.
+El problema es que el servicio bank no tiene idea de quién está invocando la
+operación `transfer`. Algunas bibliotecas RPC proporcionan autenticación,
+pero nuestra biblioteca RPC es bastante simple, así que tenemos que agregarla explícitamente.
+
+Para autenticar al llamador de la operación `transfer`, requeriremos
+que el llamador proporcione un argumento `token` adicional,
+que debe ser un token válido para el remitente. El servicio bank debe
+rechazar transferencias si el token es inválido.
+
+> 
+
+>Ejercicio 8.
+>Agrega autenticación al RPC `transfer` en el servicio bank.
+>El token del usuario actual es accesible como `g.user.token`.
+>¿Cómo debería el banco validar el token proporcionado?
+
+> 
+
+>Ejercicio 9.
+> Especifica las entradas `fwrule` apropiadas para el servicio `bank`.
+
+## Parte 4: Sandboxing del lado del servidor para perfiles ejecutables
+
+En esta parte final, implementarás sandboxing para perfiles ejecutables,
+lo cual es desafiante porque necesitamos aislar los perfiles de diferentes
+usuarios entre sí y del resto del sistema.
+
+Como ejemplo, aquí está el tipo de funcionalidad que nos gustaría soportar
+con perfiles ejecutables. Un usuario podría establecer su perfil con el siguiente
+código (que puedes encontrar en `profiles/hello-user.py`):
+
+```
+#!python
+import time
+import api
+print('Hello, *', api.call('get_visitor'), '*')
+print('
+Current time:', time.time())
 ```
 
-Parte 4: Arreglando Buffer overflows y otros errores
----------------------------------------------------
+Cuando alguien ve el perfil de este usuario en Zoobar, el server ejecutará
+este código Python, y mostrará la salida resultante como si ese fuera
+el perfil del usuario. Por ejemplo, si la usuaria `alice` ve este
+perfil, podría ver el siguiente resultado en su pantalla:
 
-Ahora que has averiguado cómo explotar Buffer overflows,
-intentarás encontrar otros tipos de vulnerabilidades en el mismo
-código. Como con muchas aplicaciones del mundo real, la "seguridad" de
-nuestro servidor web no está bien definida. Así, necesitarás usar
-tu imaginación para pensar en un modelo de amenaza plausible y política
-para el servidor web.
+```
+Hello, alice
 
->**Ejercicio 6.** Mira a través del código fuente e intenta encontrar más
-vulnerabilidades que puedan permitir a un atacante comprometer la
-seguridad del servidor web. Describe los ataques que has
-encontrado en `answers.txt`, junto con una explicación de
-las limitaciones del ataque, lo que un atacante puede lograr,
-por qué funciona, y cómo podrías ir sobre arreglarlo o prevenirlo.
-Deberías ignorar errores en el código de `zoobar`. Serán abordados en
-laboratorios futuros.
->
->Un enfoque para encontrar vulnerabilidades es rastrear el flujo
-de entradas controladas por el atacante a través del código del servidor.
-En cada punto que la entrada del atacante se use, considera todos
-los valores posibles que el atacante podría haber proporcionado en ese
-punto, y lo que el atacante puede lograr de esa manera.
->
->Deberías encontrar al menos dos vulnerabilidades para este ejercicio.
+Current time: 1708447443.7460613
+```
 
-Finalmente, arreglarás las vulnerabilidades que has explotado en
-esta tarea de laboratorio.
+La implementación inicial que proporcionamos para perfiles ejecutables ejecuta el
+código del perfil directamente en el proceso Python del server, lo que significa que
+un usuario malicioso podría manipular el server inyectando código arbitrario
+a través de su perfil.
 
->**Ejercicio 7**. Para cada vulnerabilidad de Buffer overflow
-que hayas explotado en los Ejercicios 2, 4, y 5, arregla el código del servidor web para
-prevenir la vulnerabilidad en primer lugar. No dependas de mecanismos de compilación o
-tiempo de ejecución como
-[canarios de pila](https://en.wikipedia.org/wiki/Stack_buffer_overflow#Stack_canaries), removiendo `-fno-stack-protector`, verificación de límites baggy,
-etc.
->
->Asegúrate de que tu código realmente detenga tus exploits de funcionar.
-Usa `make check-fixed` para ejecutar tus exploits
-contra tu código fuente modificado (en oposición a los binarios de referencia del personal
-de `bin.tar.gz`). Estas verificaciones deberían reportar FAIL
-(es decir, el exploit ya no funciona). Si reportan PASS, esto significa que
-el exploit aún funciona, y no arreglaste correctamente la vulnerabilidad.
->
->Nota que tu entrega *no* debería hacer cambios al
-`Makefile` y otros scripts de calificación. Usaremos nuestra versión
-no modificada durante la calificación.
->
->También deberías asegurarte de que tu código aún pase todas las pruebas usando `make check`, que usa los binarios de laboratorio no modificados.
+Usaremos WebAssembly para ejecutar el perfil ejecutable de un usuario en aislamiento,
+de modo que el perfil ejecutable de un usuario no pueda manipular los perfiles
+de otros usuarios. WebAssembly es útil aquí porque hace que crear
+un nuevo entorno de ejecución aislado sea ligero, y la creación puede
+realizarse fácilmente bajo demanda, en contraste con los containers (crear
+containers es algo intensivo en recursos y requiere privilegios especiales
+que no están disponibles para un container mismo).
+
+Para aislar código Python arbitrario usando WebAssembly, te hemos proporcionado
+una versión del intérprete de Python que puede ejecutarse dentro de un módulo WebAssembly.
+Luego ejecutaremos este intérprete de Python completo, más el
+código de perfil Python proporcionado por el usuario, dentro del módulo WebAssembly.
+Esta versión de Python está instalada como
+`/usr/local/share/python-3.12.0.wasm` dentro de tu VM.
+
+Si quieres tener una idea de este intérprete de Python aislado en WebAssembly,
+puedes ejecutarlo desde la línea de comandos en tu VM de la siguiente manera:
+
+```
+student@6566-v26:~/lab$ wasmtime run -- /usr/local/share/python-3.12.0.wasm
+Python 3.12.0 (tags/v3.12.0:0fb18b0, Dec 11 2023, 11:45:20) [Clang 16.0.0 ] on wasi
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+El comando anterior usa el
+[runtime WebAssembly `wasmtime`](https://docs.wasmtime.dev/)
+para ejecutar el intérprete de Python desde `/usr/local/share/python-3.12.0.wasm`.
+
+Dado que los perfiles ejecutables son una parte algo peligrosa del diseño
+general del sistema (estamos ejecutando código arbitrario, después de todo), estaremos
+ejecutando estos perfiles ejecutables en un container separado dedicado a
+ese propósito, muy similar a las partes anteriores de este laboratorio. Esto no
+aísla los perfiles entre sí, pero al menos proporciona algún grado
+de aislamiento entre todos los perfiles ejecutables y el resto del sistema.
+
+Debes familiarizarte con el directorio `profiles/`,
+que contiene varios perfiles ejecutables que usarás como ejemplos:
+
+ 
+- `profiles/hello-user.py` es un perfil simple
+	que imprime el nombre del visitante cuando se
+	ejecuta el código del perfil, junto con la hora actual.
+ 
+- `profiles/visit-tracker.py` mantiene un registro de la
+	última vez que cada visitante miró el perfil, e
+	imprime la hora de la última visita (si existe).
+ 
+- `profiles/last-visits.py` registra los últimos tres
+	visitantes al perfil, y los imprime.
+ 
+- `profiles/xfer-tracker.py` imprime la última
+	transferencia de zoobar entre el propietario del perfil y el visitante.
+ 
+- `profiles/granter.py` le da al visitante un zoobar.
+	Para asegurar que los visitantes no puedan robar rápidamente todos los zoobars de
+	un usuario, este perfil otorga un zoobar solo si el propietario del perfil
+	tiene algunos zoobars restantes, el visitante tiene menos de 20
+	zoobars, y ha pasado al menos un minuto desde la última
+	vez que ese visitante obtuvo un zoobar de este perfil.
+
+La pieza final de código es `zoobar/profile-server.py`: un
+server RPC que acepta solicitudes para ejecutar el código del perfil de algún usuario,
+y devuelve la salida de ejecutar ese código. Al ejecutar un
+perfil, `profile-server.py` configura un server RPC que
+permite que el código del perfil obtenga acceso a cosas fuera del
+sandbox, como los saldos de zoobar de diferentes usuarios.
+El `ProfileAPIServer` implementa esta interfaz;
+`profile-server.py` bifurca un proceso separado
+para ejecutar el `ProfileAPIServer`.
+
+Un desafío es que el servicio profile realiza `rpc_xfer`
+desde la cuenta del propietario del perfil, lo cual (dependiendo de tu diseño para
+la separación de privilegios del banco en el ejercicio 8 anterior) puede requerir un token
+para el propietario. No puedes simplemente agregar un RPC al servicio `auth`
+para obtener un token para el propietario del perfil, porque entonces cualquier servicio podría
+pedirlo; queremos que solo el servicio `profile` pueda
+hacer esta transferencia. De manera similar, no podemos agregar un RPC al servicio `bank`
+para hacer una transferencia desde la cuenta de cualquiera sin un token, ya
+que eso rompería las garantías de seguridad del ejercicio 8.
+
+Para los propósitos de este laboratorio, queremos hacer la transferencia desde la cuenta del
+propietario del perfil solo si la solicitud vino del servicio `profile`.
+Por lo tanto, el servicio `bank` debe poder autenticar
+que una solicitud vino del servicio `profile`. Para ayudarte
+a hacer esto, `rpcsrv.py` proporciona el nombre del servicio que llama en
+`self.caller`, basado en la dirección IP de la conexión desde
+la cual recibió la solicitud.
+
+Para comenzar, necesitarás agregar el servicio `profile` a tu
+`zook.conf`. Ejecuta el servicio en su propio container y en su
+propio enlace de red.
+
+> 
+
+>Ejercicio 10.
+>Agrega `profile-server.py` a tu web server, e implementa la
+>lógica en `ProfileServer.rpc_run()` para ejecutar correctamente
+>perfiles ejecutables en un sandbox WebAssembly. Puede que
+>te sea útil referirte a la documentación de los [bindings de Python para wasmtime](https://bytecodealliance.github.io/wasmtime-py/). También hay varias sugerencias en los comentarios
+>en `profile-server.py`.
+
+>Asegúrate de que tu sitio Zoobar pueda soportar los cinco perfiles.
+
+>Ejecuta make check-lab2 para verificar que tu
+>configuración modificada pasa nuestras pruebas. El caso de prueba crea algunas
+>cuentas de usuario, almacena uno de los perfiles de Python en el perfil de un
+>usuario, hace que otro usuario vea ese perfil, y verifica que el otro
+>usuario vea la salida correcta.
+
+Si encuentras problemas con las pruebas de `make check-lab2`, puedes
+revisar `/tmp/html.out` para la salida html de los perfiles.
+
+El diseño anterior puede tener varios problemas de seguridad. Primero, es importante
+que el código del perfil en sandbox no pueda manipular el estado de los
+perfiles de otros usuarios. Segundo, es importante que un perfil malicioso no pueda
+ejecutarse en bucle infinitamente.
+
+> 
+
+>Ejercicio 11. Modifica aún más `rpc_run`
+>en `profile-server.py` para que el sandbox evite que el código del perfil
+>se ejecute por más de 5 segundos.
+
+>Ejecuta make check-lab2 para ver si tu
+>implementación pasa nuestros casos de prueba.
+
+> 
+
+>Ejercicio 12.
+> Especifica las entradas `fwrule` apropiadas para `profile`
+> y otros servicios. Por ejemplo, `profile` no debería poder
+> comunicarse con `auth`.
+
+Ahora has terminado con el sandbox básico.
 
 ¡Has terminado!
-Entrega tus respuestas a la tarea de laboratorio ejecutando prepare-submit y subiendo el archivo resultante
-lab1-handin.tar.gz al buzón de la tarea.
+Ejecuta `make handin.zip` y sube el archivo `handin.zip` resultante a Canvas.
+
+## Agradecimientos
+
+Gracias al equipo del curso [CS155](https://cs155.stanford.edu/)
+de Stanford por el código inicial de la aplicación web zoobar, que
+extendimos en esta tarea de laboratorio.
+
+---
+
+**Basado en**: MIT Course 6.566 Lab 2 (Spring 2026)  
+**URL Original**: https://css.csail.mit.edu/6.566/2026/labs/lab2.html  
+**Licencia**: [Creative Commons Attribution 3.0 Unported](http://creativecommons.org/licenses/by/3.0/us/)
+
+Este laboratorio está adaptado de los materiales del curso Computer Systems Security del MIT.  
+Todo el crédito del contenido original corresponde al equipo docente de MIT CSAIL.
+
+ 
+
+ 
+
+ 
+
+ 

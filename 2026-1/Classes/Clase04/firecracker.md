@@ -68,7 +68,7 @@ style: |
   * Procesos Linux (como en OKWS)
   * Contenedores, usando namespaces de Linux + cgroups
   * VMs
-  * Runtimes de lenguaje
+  * Runtimes de lenguaje (esto no lo veremos hoy)
 
 ---
 
@@ -112,7 +112,7 @@ style: |
 ---
 
 # Los namespaces proporcionan una forma de delimitar los recursos que se pueden nombrar
-  * [[ Ref: https://blog.quarkslab.com/digging-into-linux-namespaces-part-1.html ]]
+  * [Quarkslab: Digging into Linux Namespaces](https://blog.quarkslab.com/digging-into-linux-namespaces-part-1.html)
   * El proceso pertenece a un namespace particular (para cada tipo de namespace)
     * Los nuevos procesos heredan el namespace del proceso padre
   * Ej., el namespace PID limita los PIDs que un proceso puede nombrar
@@ -209,10 +209,9 @@ style: |
 ---
 
 # Linux KVM
-  * [[ Ref: https://www.kernel.org/doc/html/latest/virt/kvm/api.html ]]
+  * [Documentación oficial de la API de KVM](https://www.kernel.org/doc/html/latest/virt/kvm/api.html)
   * Abstracción para usar soporte de hardware para virtualización
   * Gestiona CPUs virtuales, memoria virtual
-  <!-- * Soporte de hardware correspondiente: tablas de páginas anidadas -->
 
 ---
 
@@ -224,7 +223,7 @@ style: |
     * Principalmente no necesario cuando se usa soporte de hardware
     * Pero aún usado para instrucciones que el hardware no soporta nativamente
     * Ej., CPUID, INVD, ..
-    * [[ Ref: https://revers.engineering/day-5-vmexits-interrupts-cpuid-emulation/ ]]
+    * [VM Exits, Interrupts & CPUID Emulation](https://revers.engineering/day-5-vmexits-interrupts-cpuid-emulation/)
   * También proporciona alguna implementación de BIOS para comenzar a ejecutar la VM
 
 ---
@@ -258,7 +257,7 @@ style: |
   * Lenguaje memory-safe (módulo código "unsafe")
   * 50K líneas de código: mucho más pequeño que QEMU
   * Hace improbable que la implementación VMM tenga errores como buffer overflows
-  * [[ Ref: https://github.com/firecracker-microvm/firecracker ]]
+  * [Repositorio de Firecracker en GitHub](https://github.com/firecracker-microvm/firecracker)
 
 ---
 
@@ -299,37 +298,23 @@ style: |
     * Proceso VMM encarcelado
     * Linux KVM aún parte del TCB, pero mucho más pequeño que QEMU
     * Aún así, los errores de KVM socavarían el aislamiento de Firecracker
-      * [[ Ref: https://googleprojectzero.blogspot.com/2021/06/an-epyc-escape-case-study-of-kvm.html ]]
+      * [Google Project Zero: An EPYC Escape - KVM Vulnerability Case Study](https://googleprojectzero.blogspot.com/2021/06/an-epyc-escape-case-study-of-kvm.html)
 
 ---
 
 # Algunos errores encontrados en Firecracker
-  * [[ Ref: https://github.com/firecracker-microvm/firecracker/issues/1462 ]]
+  * [Issue #1462: Memory bounds-checking vulnerability](https://github.com/firecracker-microvm/firecracker/issues/1462)
     * Problema de verificación de límites de memoria, a pesar de estar escrito en Rust
-  * [[ Ref: https://github.com/firecracker-microvm/firecracker/issues/2057 ]]
+  * [Issue #2057: Network interface DoS bug](https://github.com/firecracker-microvm/firecracker/issues/2057)
     * Error DoS en interfaz de red
-  * [[ Ref: https://github.com/firecracker-microvm/firecracker/issues/2177 ]]
+  * [Issue #2177: Unbounded serial console buffer](https://github.com/firecracker-microvm/firecracker/issues/2177)
     * El buffer de consola serie creció sin límite
     * Podría causar que una VM use mucha memoria a través del proceso Firecracker
 
 ---
 
 # Firecracker usado fuera de Lambda
-  * [[ Ref: https://fly.io/blog/sandboxing-and-workload-isolation/ ]]
-
----
-
-# Plan alternativo: redirigir llamadas al sistema a una implementación diferente
-  * En lugar de bloquear llamadas al sistema, interceptarlas e implementarlas en otro lugar
-  * gVisor: implementación en espacio de usuario de muchas llamadas al sistema de Linux, en Go
-  * Beneficio: menos probable tener errores de gestión de memoria en código Go
-  * Beneficio: los errores no están en código del kernel, probablemente contenidos por proceso Linux
-    * Usar seccomp-bpf para limitar qué syscalls puede invocar el emulador gVisor
-  * Desventaja: los overheads de rendimiento podrían ser significativos
-    * Cada llamada al sistema debe ser redirigida al proceso gVisor
-    * Overhead de cambio de contexto, overhead de copia de datos, etc
-  * Posible desventaja: compatibilidad (Linux real vs gVisor)
-    * ¡gVisor hace un trabajo creíble implementando fielmente los syscalls de Linux!
+  * [Fly.io: Sandboxing and Workload Isolation](https://fly.io/blog/sandboxing-and-workload-isolation/)
 
 ---
 
