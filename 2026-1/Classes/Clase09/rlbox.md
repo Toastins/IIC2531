@@ -184,7 +184,7 @@ style: |
 ---
 
 # Argumentos de callback
-  * A menudo las interfaces de biblioteca involucran que la biblioteca pase algo de estado de vuelta a función cb
+  * A menudo las interfaces de biblioteca involucran que la biblioteca pase algo de estado de vuelta a función callback
     * Ej., puntero a alguna estructura de datos a nivel de app
   * La biblioteca comprometida puede pasar puntero arbitrario
   * Podríamos incluso necesitar restringir los argumentos a esas funciones callback
@@ -324,36 +324,9 @@ resize_canvas(safe_width, safe_height); // ✅ safe to use
   * Overheads de CPU modestos (3% para SFI/NaCl, 13% para sandboxing de procesos)
     * El overhead de sandboxing parece relativamente pequeño comparado con costos generales
     * Tienen algunas optimizaciones para mitigar overhead de cambio de contexto
-    * Pin proceso sandbox en otro core, spin-wait para solicitudes
   * Overheads de memoria modestos también
     * El compartir sandbox parece funcionar bien
     * Los sandboxes no son de larga duración, así que los costos de memoria no son a largo plazo
-
-<!--
----
-
-# El overhead crudo parece más significativo
-  * 27% reducción de throughput para Apache mod_markdown (NaCl)
-  * 27% reducción de throughput para bcrypt en Node.js (NaCl)
-  * 85% overhead para libGraphite (wasm)
-  * Lo que importa parece ser cruces de límite y código intensivo en CPU
-    * Ambos probablemente serán optimizados a medida que las herramientas wasm maduren
-    * Paper posterior sobre reducir overhead de cruce de límite, del mismo grupo
-    * [Paper sobre reducción de overhead en cruces de límites de aislamiento](https://cseweb.ucsd.edu/~dstefan/pubs/kolosick:2022:isolation.pdf)
-
----
-
-# RLbox usado en producción en Firefox, parece ser una herramienta bien desarrollada
-  * [Repositorio de RLBox Sandboxing API](https://github.com/plsyssec/rlbox_sandboxing_api/)
-  * [Documentación oficial de RLBox](https://plsyssec.github.io/rlbox_sandboxing_api/sphinx/)
-
----
-
-# El código original para el paper difiere algo de la versión de producción
-  * [Código original del paper: LibrarySandboxing](https://github.com/shravanrn/LibrarySandboxing)
-  * [Código original del paper: rlbox_api](https://github.com/shravanrn/rlbox_api)
-  * Parece que el congelamiento de struct fue descartado en producción
--->
 ---
 
 # ¿Hasta qué punto surgen problemas de interfaz similares si estamos hablando por la red?
