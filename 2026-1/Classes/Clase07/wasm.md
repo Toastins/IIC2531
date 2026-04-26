@@ -59,6 +59,8 @@ style: |
   * Javascript es universalmente soportado pero no es una buena opción en algunos casos
     * Código de alto rendimiento
     * Aplicaciones escritas en un lenguaje que no es JS
+  * Desafío: debe ser agnóstico en términos de lenguaje
+    * Si escribo algo en Rust solo puede correr programas en Rust
   * Desafío: el código debe estar aislado
     * No puede tener código de un sitio web que manipule datos de otro sitio
     * No puede tener código de un sitio web que manipule datos en la computadora del usuario
@@ -89,24 +91,21 @@ style: |
     * No puede tomar un binario existente y ejecutarlo en aislamiento
     * Contraste con contenedores o VMs: puede ejecutar aplicaciones Linux existentes
 
-<!--
----
-
-# Aparte: sandboxing de Java
-  * Java VM
-  * Control de acceso basado en stack
-  * Algunos códigos son confiables (ej., pueden acceder a archivos), pero algunos no
-  * El código de acceso a archivos verifica si el llamador (marcos de stack) es confiable o no
-  * Fácil tener un error: problemas de estilo "confused deputy"
-  * [[ Ref: http://phrack.org/issues/70/7.html ]]
--->
 ---
 
 # SFI
 
 ![sfi.png align-center](sfi.png)
 
+---
 
+# Flujo de trabajo de WebAssembly
+  * [[ Código de aplicación (ej., C) ]]
+    * -> Compilador C que puede generar WebAssembly ->
+  * [[ Módulo / archivo WebAssembly ]]
+    * -> Validador en navegador web (verificaciones de tipos)
+    * -> Runtime (ejecución) ->
+  * [[ Código nativo que puede ejecutar el módulo WebAssembly ]]
 ---
 
 # Sistema SFI moderno: WebAssembly
@@ -125,16 +124,6 @@ style: |
   * Tablas. Objetivos de punteros de función
   * Memoria. Memoria contigua de 0 a sz
   * Importaciones y exportaciones. Ej., puede marcar una función como exportada, o importar función
-
----
-
-# Flujo de trabajo de WebAssembly
-  * [[ Código de aplicación (ej., C) ]]
-    * -> Compilador C que puede generar WebAssembly ->
-  * [[ Módulo / archivo WebAssembly ]]
-    * -> Validador en navegador web (verificaciones de tipos)
-    * -> Intérprete o compilador (ejecución) ->
-  * [[ Código nativo que puede ejecutar el módulo WebAssembly ]]
 
 ---
 
@@ -279,26 +268,12 @@ style: |
     * En el peor caso, golpeará page fault si el acceso es a memoria más allá del tamaño asignado
 
 ---
-<!--
-# Pequeño trade-off con verificación de límites basada en VM
-  * Ya no es completamente determinista
-  * Dependiendo del runtime, el programa podría o no parar en store fuera de límites,
-    * si el store está ligeramente fuera de límites
-
----
--->
 
 # No hay seguridad de memoria dentro de un módulo
   * Es completamente posible que un programa C compilado a WebAssembly tenga buffer overflow
   * Ej., corromper región de memoria asignada en heap
   * WebAssembly no previene overflow, así que el programa C podría comportarse mal arbitrariamente
   * Pero asegura que el código WebAssembly no pueda afectar el resto del sistema
-
----
-
-# ¿Por qué es importante la verificación de tipos de valor? (i32 vs i64)
-  * El compilador puede querer saber si un valor podría estar limitado a 32 bits
-  * Permite algunas optimizaciones como cargar/almacenar ubicaciones de memoria
 
 ---
 
@@ -360,7 +335,7 @@ style: |
     * [[ Ref: https://blog.cloudflare.com/cloud-computing-without-containers/ ]]
   * Trabajo en curso para definir interfaz estándar al sistema fuera de un módulo
     * [[ Ref: https://github.com/WebAssembly/WASI ]]
-
+<!--
 ---
 
 # ¿Por qué la formalización?
@@ -401,7 +376,7 @@ style: |
 
 # Posible reducir el costo de transiciones entre dominios de aislamiento aún más
   * [[ Ref: https://cseweb.ucsd.edu/~dstefan/pubs/kolosick:2022:isolation.pdf ]]
-
+-->
 ---
 
 # Resumen

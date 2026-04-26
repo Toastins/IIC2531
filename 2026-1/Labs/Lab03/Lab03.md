@@ -87,7 +87,7 @@ con el procesador ARM M1), puedes ejecutar la máquina virtual usando qemu.
 Para hacer esto, primero instala [Homebrew](https://brew.sh/), luego instala
 qemu ejecutando [`brew install
 qemu`](https://formulae.brew.sh/formula/qemu), y finalmente edita el script shell `6.858-x86\_64-v22.sh` que era
-parte de la imagen VM del curso, y elimina la bandera `-enable-kvm`. En este
+parte de la imagen VM del curso, y en macOS ajusta la bandera `-machine accel=hvf` (no `-enable-kvm`, que corresponde a Linux). En este
 punto, deberías poder iniciar la VM del curso ejecutando `./6.858-x86\_64-v22.sh`
 como se mencionó anteriormente.
 
