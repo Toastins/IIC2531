@@ -13,624 +13,534 @@ style: |
     align-items: flex-start;
     padding-top: 50px;
   }
-
-  img[alt~="align-right"] {
-    position: absolute;
-    margin-top:0px
+  img[alt~="diagram"] {
+    display: block;
+    width: 100%;
+    max-height: 570px;
+    object-fit: contain;
+    margin: 0 auto;
   }
+  ul ul li, ol ol li { color: #666; font-size: 0.9em; }
+  ul ul ul li, ol ol ol li { color: #666; font-style: italic; font-size: 0.8em; }
+  ul ul, ol ol { opacity: 0.8; }
+---
 
-  img[alt~="align-center"] {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-  }
-  
-  /* Right-align terminal commands */
-  .terminal-commands {
-    text-align: right;
-    margin-left: 400px;
-  }
-  
-  /* Make sub-bullets lighter and smaller */
-  ul ul li, ol ol li {
-    color: #666666;
-    font-size: 0.9em;
-  }
-  
-  /* Make nested sub-bullets even lighter, italic, and smaller */
-  ul ul ul li, ol ol ol li {
-    color: #666666;
-    font-style: italic;
-    font-size: 0.8em;
-  }
-  
-  /* Alternative: Use opacity for a more subtle effect */
-  ul ul, ol ol {
-    opacity: 0.8;
-  }
+# Hardware Confiable
+
+## BitLocker y el costo de confiar en el arranque
+
+**Modelo:** el adversario tiene control físico parcial de la computadora.
 
 ---
 
-# Hardware Confiable (Trusted Hardware)
+# En la clase de hoy
 
-Aislamiento en un nuevo modelo de amenaza:
-**El adversario tiene algún control físico de la computadora.**
+1. Amenaza y límites del cifrado ordinario
+   - Entender por qué el acceso físico convierte el cifrado en un problema de custodia de llaves.
+2. Secure Boot versus Measured Boot
+   - Comparar bloquear software no autorizado con registrar qué software fue ejecutado.
+3. Hardware confiable y liberación de llaves de BitLocker
+   - Comprender cómo el estado medido del arranque condiciona la entrega de la llave.
+4. Lo que BitLocker no garantiza
+   - Delimitar la protección obtenida e identificar los ataques que permanecen.
 
----
-
-# Ataques físicos potenciales
-
-* El adversario roba un laptop, intenta extraer datos.
-* Laptop descomisionado desechado, el adversario intenta obtener datos del disco.
-* El adversario manipula un servidor en un centro de datos.
-* El adversario modifica el disco para contener software malicioso.
-* El adversario intenta extraer datos secretos de un laptop o servidor.
 
 ---
 
-# Dos contextos generales para esta amenaza
+<!-- _class: lead -->
 
-**1. El dueño del dispositivo es confiable**
-  * Historia de Bitlocker, principalmente sobre robo.
-
-**2. El dueño del dispositivo no es confiable**
-  * DRM, computación en la nube, tarjetas inteligentes.
+# Threat model y por qué el cifrado ordinario no basta
 
 ---
 
-# Seguridad contra atacantes físicos
+# ¿Qué es BitLocker?
 
-En general, la seguridad contra un atacante físico tiende a ser un **área gris**.
+**BitLocker es el sistema de cifrado de volumen completo de Windows.**
 
-* Un adversario capaz puede manipular físicamente el hardware, extraer secretos, etc.
-* Es posible aumentar el esfuerzo del ataque, pero pocas ideas proporcionan un gran salto.
-* Una de estas ideas es el foco de este paper: **usar criptografía**.
+- Cifra los sectores del volumen donde están Windows, las aplicaciones y los datos.
+- Sin la llave correcta, copiar o extraer el disco solo entrega texto cifrado.
+- Durante un arranque legítimo, Windows necesita recuperar la llave para abrir el volumen.
+- La llave puede protegerse mediante hardware confiable, PIN, llave USB o una clave de recuperación.
 
----
-
-# Modelo general para hardware confiable
-
-* **Chip confiable** que asumimos no ha sido manipulado.
-* Generalmente, se asume que el chip confiable es simple, para hacerlo resistente a manipulación.
-  * Dispositivos más grandes podrían ser muy costosos de proteger contra manipulación física.
-* **Todo lo externo** al chip confiable podría ser controlado por el adversario.
-  * En particular, incluye I/O, memoria y almacenamiento.
-* Técnica poderosa: usar criptografía (encriptación, autenticación).
+**Foco de esta clase:** cómo hardware confiable puede liberar la llave automáticamente sin almacenarla en texto claro junto al disco.
 
 ---
 
-# Paper de hoy: Bitlocker
+# El Problema: Un laptop robado
 
-Paper interesante: trade-offs de ingeniería del mundo real para un sistema de seguridad.
+**El atacante tiene acceso físico a la máquina.**
 
-* Los autores reconocen plenamente que su sistema no es perfecto.
-* Sin embargo, el diseño tiene sentido para el modelo de amenaza objetivo.
-* **Sistema real:** usado en Windows Vista en adelante.
-* Historia limpia sobre usar TPM como hardware confiable para ataques físicos.
+Puede:
+- extraer el disco y conectarlo a otro computador;
+- arrancar desde otro medio y evitar el login de Windows;
+- reemplazar componentes del boot para ejecutar su propio software.
 
----
-
-# ¿Qué problema intenta resolver Bitlocker?
-
-**Prevenir que datos sean robados si un atacante roba físicamente un laptop.**
-
-¿Cómo obtendría un atacante datos de un laptop robado, sin Bitlocker?
-* Fácil: sacar el disco; bootear desde CD y cambiar contraseñas; etc.
-
-**Foco de Bitlocker:** encriptación de disco, con soporte de hardware confiable.
+> **Objetivo de BitLocker:** mantener confidenciales los datos almacenados aunque el atacante posea el laptop.
 
 ---
 
-# ¿Por qué Bitlocker necesita hardware confiable?
+# Primera idea: cifrar el disco
 
-**Problema:** ¿de dónde vienen las llaves de encriptación (o desencriptación) del disco?
+El cifrado evita que los sectores copiados revelen directamente sus datos.
 
----
+Pero todo cifrado necesita una **llave de desencriptación**:
+- si la llave está legible en el disco, el atacante obtiene ambos;
+- si nunca está disponible, Windows tampoco puede arrancar;
+- si se libera durante el boot, importa **quién la recibe**.
 
-# Enfoque simple: el usuario provee la llave
-
-* El usuario podría ingresar contraseña (hasheada para producir llave, como en Kerberos).
-  * Problema: usuario necesita ingresar contraseña temprano en el proceso de boot (BIOS).
-  * Problema: las contraseñas son débiles, el adversario puede intentar adivinar.
-* El usuario podría conectar una unidad USB conteniendo la llave.
-  * Problema: los usuarios no quieren cargar llaves USB extra.
-  * Problema: los usuarios podrían perder la llave USB junto con el laptop.
+> El problema difícil no es cifrar: es custodiar y liberar la llave.
 
 ---
 
-# Plan de Bitlocker
+# ¿Quién debería proporcionar la llave?
 
-**Usar hardware confiable para obtener la llave.**
+**Contraseña antes del boot**
+- Requiere interacción temprana y puede duplicar el login de Windows.
+- Una contraseña humana puede ser vulnerable a adivinación.
 
-Trade-off de diseño entre garantías de seguridad fuertes y usabilidad.
+**Llave en USB**
+- Separa la llave del disco, pero agrega un objeto que transportar.
+- Puede perderse o ser robada junto con el laptop.
 
----
-
-# Punto de partida: ¿cómo saber que tu sistema está ejecutando el software correcto?
-
-A menudo aparece en dispositivos de función fija:
-* Consolas de juegos
-* Chromebooks
-* etc.
-
----
-
-# Plan básico: Secure Boot
-
-1. El código de boot inicial viene de **ROM**, cableado en tiempo de manufactura.
-2. El código ROM carga el boot loader, **verifica la firma** del boot loader.
-   * ROM viene con llave pública usada para verificación.
-3. El boot loader carga el kernel del OS, similarmente verifica la firma.
-4. El kernel del OS verifica la integridad de todos los demás datos que carga.
+**Liberación automática**
+- Mejora la usabilidad.
+- Es peligrosa si cualquier sistema operativo puede obtener la llave.
 
 ---
 
-# Complicación técnica
+# Liberación automática: el problema
 
-Más allá del kernel del OS, es muy costoso verificar todos los datos.
-* Ej., la imagen completa del OS incluyendo todas las bibliotecas.
-* No quieres cargarla del disco solo para verificar la firma.
-* En su lugar, necesitas algún plan más eficiente para autenticar datos.
+BitLocker quiere abrir el volumen sin pedir una contraseña adicional ni una llave USB.
 
----
+Eso significa que la computadora debe obtener la llave por sí sola durante el arranque.
 
-# Enfoques para autenticación eficiente
+Pero la liberación no puede ser incondicional:
+- un atacante podría modificar el software de arranque;
+- ese software pediría la llave igual que Windows;
+- con la llave, podría desencriptar todo el volumen.
 
-**Enfoque 1:** Firma sobre la raíz Merkle de un árbol del sistema de archivos.
-* Verificar pruebas Merkle cuando se cargan datos del disco después.
-* Efectivamente difiriendo las verificaciones.
-
-**Enfoque 2:** "Autenticación del pobre" de Bitlocker.
-* Más eficiente pero garantía más débil.
+> La liberación automática necesita una condición de seguridad.
 
 ---
 
-# Sistemas que usan Secure Boot
+# La condición: el estado del arranque
 
-* Apple iOS devices
-* Consolas de juegos (Playstation, Xbox, etc.)
-* Chrome OS Verified Boot
-  * [ Ref: https://www.chromium.org/chromium-os/chromiumos-design-docs/verified-boot ]
-* UEFI Secure Boot
-  * [ Ref: https://docs.microsoft.com/en-us/windows/security/information-protection/secure-the-windows-10-boot-process ]
+La llave queda asociada a una configuración específica del proceso de boot.
 
----
+- **Arranque esperado:** la configuración coincide y la llave puede liberarse.
+- **Arranque modificado:** la configuración no coincide y la llave permanece protegida.
 
-# Desafío común: Rollback
+Un componente de hardware confiable debe observar el arranque y aplicar esta condición, porque el disco y su software pueden haber sido modificados por el atacante.
 
-* El Boot ROM es **sin estado**, no tiene idea qué versión pudo haber visto antes.
-* Un diseño ingenuo podría ser engañado para bootear un OS antiguo que tiene bugs de seguridad.
-* **Una solución:** contador monotónico en hardware rastrea la última versión de OS vista.
-* Trade-offs más inteligentes posibles: ver caso de estudio de Apple iOS en clase posterior.
+**Para aplicar esta condición, el hardware necesita controlar o registrar qué software participa en el arranque.**
+
+- Secure Boot intenta impedir un arranque no autorizado.
+- Measured Boot registra el arranque que efectivamente ocurrió.
 
 ---
 
-# Alternativa más flexible: "Measured Boot"
+<!-- _class: lead -->
 
-* Secure boot supone que sabes qué llave debe firmar el software.
-* ¿Qué pasa si el hardware no sabe qué software es bueno vs malo?
-
-**Idea:** Medir qué software se bootea.
-* Hashear el boot loader, luego hashear el kernel del OS, luego hashear la imagen del OS, etc.
+# Secure Boot versus Measured Boot
 
 ---
 
-# Measured Boot: Generación de secretos
+# Secure Boot: impedir lo no autorizado
 
-* **No puede prevenir** que software malo se cargue, ¡pero puede generar secretos diferentes!
-* El sistema tiene algún secreto almacenado durablemente en hardware (mismo entre reboots).
-* Cuando el sistema bootea, **deriva una llave secreta** basada en su secreto de hardware.
-  * Derivación basada en hash del boot loader, kernel del OS, etc.
+1. Código inicial inmutable (ROM/firmware) contiene una llave pública.
+2. Verifica la firma del bootloader antes de ejecutarlo.
+3. El bootloader verifica el kernel.
+4. El kernel autentica lo que carga después.
 
----
+**Política:** una firma válida autoriza; una inválida detiene el boot.
 
-# Measured Boot: Implicaciones
-
-* El OS obtiene llave secreta para desencriptar sus datos, para autenticarse con servidores remotos, etc.
-* Bootear un OS diferente (ej., debido a corrupción por malware) **genera una llave diferente**.
+Ejemplos: UEFI Secure Boot, consolas, iOS, Chrome OS Verified Boot.
 
 ---
 
-# Measured Boot requiere chip de medición confiable separado
+# Autenticar mucho código, sin leerlo todo
 
-* Con secure boot, estábamos seguros de que todo el código ejecutando era "confiable".
-* Con measured boot, no sabemos qué es confiable o no; solo lo medimos.
-* La CPU principal podría estar ejecutando código arbitrario, entonces ¿cómo hacemos mediciones?
+**Problema:** verificar de una vez toda la imagen del OS es costoso.
 
----
+- Firma de una **raíz Merkle**: cada bloque trae una prueba verificable cuando se lee.
+- BitLocker elige una garantía más débil para el volumen cambiante: cifra sectores y confía en que la corrupción útil sea difícil.
 
-# TPM: Trusted Platform Module
-
-Enfoque de measured boot en x86.
-
-```
-               DRAM       /-- BIOS
-                 |        |
-    CPU --- Northbridge --+-- TPM
-```
+**Desafío común — rollback:** firmware sin estado puede aceptar una versión antigua firmada pero vulnerable. Un contador monotónico puede registrar la versión mínima permitida.
 
 ---
 
-# Estructura del TPM
+# Measured Boot necesita hardware confiable
 
-El chip TPM tiene:
-* Un conjunto **efímero** de registros (PCR0, PCR1, ..)
-* Una **llave** secreta
+**TPM significa Trusted Platform Module.**
 
----
+Es un componente de seguridad pequeño, aislado del sistema operativo y del almacenamiento principal:
 
-# Operaciones soportadas del TPM
+- mantiene registros protegidos para acumular mediciones del arranque;
+- protege llaves y otros secretos;
+- ejecuta operaciones criptográficas limitadas;
+- aplica políticas antes de liberar secretos.
 
-* `TPM_extend(m)`: extender un registro PCR
-  * `PCRn = SHA1(PCRn || m)`
-* `TPM_quote(n, m)`: generar firma de `(n -> PCRn, m)` con llave del TPM
-* `TPM_seal(n, PCR_value, plaintext)`: retorna ciphertext
-* `TPM_unseal(ciphertext)`: retorna plaintext, si PCRn coincide con PCR_value
+El TPM no decide si un programa es “seguro”: conserva evidencia confiable sobre lo que ocurrió durante el boot.
 
 ---
 
-# ¿Quién hace la autenticación/medición para measured boot?
+# Measured Boot: registrar, no bloquear
 
-* Los valores PCR se resetean a cero **solo cuando toda la computadora se resetea**.
-  * Importante: CPU y TPM deben resetear juntos.
-  * Importante: CPU debe saltar a código BIOS, que no está manipulado.
+- Cada etapa hashea la siguiente **antes** de ejecutarla.
+- El TPM acumula esas mediciones en registros protegidos llamados **Platform Configuration Registers (PCR)**.
+- Software distinto produce, con alta probabilidad, un estado PCR distinto.
+- El boot puede continuar aunque el estado no sea el esperado.
+
+**Corrección clave:** las mediciones no generan una llave nueva. Los PCR **condicionan el unseal de un secreto ya sellado**.
+
+---
+
+# Dos mecanismos, dos decisiones
+
+![diagram](trusted-hardware-secure-vs-measured.svg)
+
+---
+
+# ¿Qué permite y qué no permite medir?
+
+**Permite**
+- Condicionar secretos al estado de arranque.
+- Reportar mediciones a un tercero mediante attestation.
+- Separar “software observado” de “software autorizado”.
+
+**No garantiza por sí solo**
+- que el software medido sea seguro;
+- que no tenga bugs explotables después;
+- que CPU, TPM y su enlace no hayan sido manipulados.
+
+---
+
+<!-- _class: lead -->
+# Operaciones TPM y liberación de llaves de BitLocker
+
+---
+
+# TPM: estado pequeño, operaciones precisas
+
+**Dentro del TPM**
+- PCR efímeros: `PCR0`, `PCR1`, …
+- Llaves secretas protegidas por el TPM.
+
+**Operaciones relevantes**
+- `extend(n,m)`: `PCRn ← H(PCRn ∥ m)`
+- `seal(PCR esperado, secreto)`: produce ciphertext ligado a una política.
+- `unseal(ciphertext)`: libera el secreto solo si el PCR satisface la política.
+- `quote(n, nonce)`: firma PCR + desafío para attestation.
+
+---
+
+# Cuatro operaciones, cuatro propósitos
+
+- **`extend`** → registra la secuencia del arranque.
+- **`seal`** → vincula un secreto a un estado PCR esperado.
+- **`unseal`** → libera el secreto cuando el estado actual satisface la política.
+- **`quote`** → entrega a otra parte evidencia firmada sobre los PCR.
+
+**Para BitLocker:** `extend` registra el boot; `seal` y `unseal` protegen la llave. `quote` se usa principalmente para attestation.
 
 ---
 
 # Cadena de medición
 
-1. Código BIOS "se mide a sí mismo": extiende PCR con hash de su código.
-2. Código BIOS carga boot loader (ej., Linux grub), lo mide (extiende PCR con hash del boot loader), lo ejecuta.
-3. Boot loader carga kernel, lo mide (extiende PCR con H(kernel)), lo ejecuta.
+1. Al reset, CPU y TPM deben reiniciarse juntos; PCR parte de un valor conocido.
+2. BIOS mide su estado y extiende el PCR.
+3. BIOS carga y mide el bootloader; luego lo ejecuta.
+4. Bootloader carga y mide el kernel; luego lo ejecuta.
+
+**Supuestos delicados:** la CPU comienza en BIOS no manipulado y el atacante no desacopla el reset del TPM.
 
 ---
 
-# ¿Qué podemos inferir si algún PCRn corresponde a una cadena particular de hashes?
+# Extend + seal/unseal
 
-* **Podría ser** que la cadena de software correcta fue cargada.
-* **O** algún software en el camino tenía un bug, fue explotado, y el adversario emitió sus propios extends desde ese punto.
-* **O** la CPU no comenzó con el código BIOS en primer lugar.
-* **O** el hardware TPM no se reseteó sincrónicamente con la CPU.
-  * [ Resultó ser "fácil" en algunas motherboards: solo cortocircuitar un pin. ]
-
-<!--
----
-
-# Demo: TPM en Linux
-
-```bash
-systemd-analyze pcrs
-tpm2_pcrread
-
-## obtener valores PCR actuales
-tpm2_pcrread -o pcr.bin sha256:3
-od -t x1 pcr.bin
-```
+![diagram](trusted-hardware-tpm-pcr-seal.svg)
 
 ---
 
-# Demo: Crear política y sellar secreto
+# ¿Qué prueba un PCR esperado?
 
-```bash
-## crear una política conteniendo los valores PCR que acabamos de leer
-tpm2_createpolicy --policy-pcr -l sha256:3 -f pcr.bin -L pcr.policy
+Un PCR correcto es **consistente con** la cadena de software esperada, pero no una prueba absoluta:
 
-## crear una llave maestra, para usar en sellado
-tpm2_createprimary -c primary.ctx
+- una etapa medida podría contener un bug explotable;
+- desde esa etapa, el atacante podría emitir sus propios `extend`;
+- la CPU podría no haber comenzado en el BIOS previsto;
+- CPU y TPM podrían no haberse reseteado sincrónicamente.
 
-## sellar el secreto bajo la política especificada arriba
-echo 'secret' | tpm2_create -C primary.ctx -L pcr.policy -i- -c seal.ctx
-
-## desellar, ya que PCRs todavía tienen los mismos valores
-tpm2_unseal -c seal.ctx -p pcr:sha256:3
-```
+**Lección:** el significado del PCR depende de la cadena y de supuestos de hardware.
 
 ---
 
-# Demo: Extender PCR y fallar unseal
+# Modo TPM de BitLocker
 
-```bash
-## extender el PCR en el TPM
-tpm2_pcrextend 3:sha256=a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447
+- La llave de volumen no se guarda en claro “dentro del TPM”.
+- Se almacena **sellada** bajo una política PCR.
+- El TPM la libera cuando reconoce el arranque medido.
+- El usuario no necesita interactuar con el firmware.
 
-## unseal falla, ya que el valor PCR cambió
-tpm2_unseal -c seal.ctx -p pcr:sha256:3
-```
+**Consecuencia:** el TPM protege la llave **hasta que termina el boot esperado**. Después de liberarla:
 
-**El secreto ya no es accesible porque el estado del sistema cambió.**
--->
----
+- Windows mantiene la llave en memoria y puede leer el volumen;
+- el login y los permisos de Windows controlan quién accede a los datos;
+- si un atacante compromete el kernel en ejecución, BitLocker ya no impide que lea el disco.
 
-# ¿Qué nos permite hacer esto?
-
-Bajo el supuesto de que el adversario no manipula CPU, TPM, o su enlace:
+**BitLocker protege datos en reposo; no protege un Windows ya desbloqueado y comprometido.**
 
 ---
 
-# Attestation: Probar a otros qué software estás ejecutando
+# Del reset al volumen Windows
 
-* Usar `TPM_quote()` para que el TPM firme un mensaje en tu nombre.
-* Supuesto: la parte remota confía en tu TPM (pero no en ti directamente).
-* TPM tiene su propia llave secreta, el fabricante de HW firma la llave pública, almacena cert en TPM.
-* Típicamente llamado una **"attestation"**.
+![diagram](trusted-hardware-bitlocker-flow.svg)
 
 ---
 
-# Buen ajuste para configuraciones de dueño no confiable
+# BitLocker con TPM, sin PIN de prearranque
 
-* DRM, servidor de cómputo en la nube, etc.
-* Puedes comunicarte con un dispositivo remoto, y saber que está ejecutando código esperado.
-* Ej., versión correcta de Windows que no permite copiar datos de películas (DRM).
-* Ej., algún VMM o bootloader confiable para ejecutar una VM en un servidor.
+**“Modo solo-TPM”** significa que el TPM es el único requisito para liberar automáticamente la llave:
 
----
+1. El estado PCR coincide con la política.
+2. El TPM libera la llave y Windows abre el volumen.
+3. Recién entonces aparece el login de Windows.
 
-# Encriptar datos accesibles solo por software específico
+**Ventaja:** el usuario no necesita ingresar un PIN adicional antes de iniciar Windows.
 
-* Usar `TPM_seal`, `TPM_unseal`.
-* Los datos sellados solo pueden ser desencriptados por el destinatario elegido (PCR).
-* Cada TPM tiene su propia llave generada aleatoriamente para encriptación.
-* Ej., Bitlocker: dar llave al OS legítimo, dejar que el OS verifique credenciales del usuario.
+**Costo:** si el arranque pasa las comprobaciones del TPM, cualquiera con el laptop puede llegar hasta el login con el volumen ya abierto. Desde ahí, la protección depende de las credenciales y del kernel de Windows.
+
+**TPM + PIN** agrega un segundo requisito antes de liberar la llave.
 
 ---
 
-# Modo TPM de Bitlocker
+# ¿Qué ataques detiene el modo solo-TPM?
 
-**Idea:** Almacenar llave en el TPM (o más bien, sellarla usando el TPM).
+**Disco extraído o copiado a otro computador**
+- El otro TPM no puede liberar la llave sellada.
 
-**Ventaja:** No hay necesidad de que el usuario interactúe con el BIOS.
+**Boot modificado en el mismo laptop**
+- Si cambian las mediciones cubiertas por la política PCR, BitLocker entra en recuperación.
 
----
+**Boot normal en el mismo laptop**
+- El TPM libera la llave y el atacante llega al login de Windows.
 
-# ¿Cuál es el punto del modo solo-TPM?
-
-* La llave solo puede obtenerse si la máquina bootea el mismo OS (Windows).
-* Como resultado, la seguridad se reduce a cualquier plan que tenga Windows.
-
----
-
-# Opciones de seguridad con modo TPM
-
-**Opción 1:** Usuario tiene contraseña de Windows.
-
-¿Por qué es mejor que el enfoque de contraseña-en-BIOS?
-1. No hay necesidad de ingresar contraseña dos veces: en BIOS y en Windows.
-2. Windows puede limitar intentos de login, prevenir adivinación de contraseña.
-
-**Opción 2:** Usuario no puede acceder a datos sensibles directamente.
-* Usuario podría tener que acceder a datos sensibles vía proceso privilegiado.
-* El proceso privilegiado no divulgará el conjunto completo de datos.
+**En resumen:** protege contra lectura *offline* y cambios en el boot medido sin exigir un PIN. Si el equipo arranca normalmente, el atacante llega al login de Windows.
 
 ---
 
-# ¿Qué se mide en el boot de BitLocker?
+# ¿Qué se mide antes de liberar la llave?
 
-* Dos particiones en disco.
-* **Primera partición:** contiene código de bootstrapping de BitLocker.
-* **Segunda partición:** contiene datos encriptados ("volumen OS").
-* Primera partición medida en boot.
-* Llave de BitLocker sellada con medición PCR de la primera partición.
+**Ruta de arranque**
+- Firmware y componentes de arranque extienden sus mediciones en los PCR.
+- BitLocker vincula la liberación de la llave a ese estado PCR esperado.
+- Si cambia un componente cubierto por la política, el TPM no libera la llave automáticamente.
 
----
+**Volumen de Windows cifrado**
+- No se calcula un hash de todo el volumen en cada arranque: es grande y cambia constantemente.
+- Después de liberar la llave, Windows descifra y cifra sectores bajo demanda.
 
-# ¿Por qué no medir la segunda partición?
-
-* Cambia frecuentemente.
-* Necesita un plan de "autenticación" más eficiente.
-* Expectativa: el adversario no podrá cambiarla de manera significativa.
+**Consecuencia:** un PCR esperado valida la ruta de arranque medida, no demuestra que cada archivo del disco permanezca intacto.
 
 ---
 
-# ¿Qué pasa si necesitamos actualizar?
+# Actualización y recuperación
 
-**Actualizar la primera partición:**
-* Una posibilidad: re-sellar llave con nuevo valor PCR antes de actualizar.
+**Si cambia la partición medida**
+- Preparar la nueva política y re-sellar antes de actualizar.
 
-**Actualizar laptops o recuperar de laptop muerto:**
-* La llave de encriptación del disco está almacenada encriptada con una **contraseña de recuperación**.
-* (O, almacenada en Active Directory encriptada con contraseña del admin.)
-* El usuario puede escribir su contraseña de recuperación para ganar acceso al disco.
+**Si el PCR no coincide o el equipo falla**
+- Usar una contraseña/llave de recuperación.
+- Puede almacenarse administrativamente (por ejemplo, en Active Directory).
 
----
-
-# ¿Cómo encriptamos el disco una vez que tenemos la llave?
-
-* Encriptar bloques de disco (sectores) **uno a la vez**.
-* ¿Por qué uno a la vez? **Atomicidad, rendimiento.**
+La recuperación evita perder datos, pero agrega otro secreto que debe protegerse.
 
 ---
 
-# Problema potencial: Integridad
+# ¿Por qué cifrar sector por sector?
 
-El adversario puede modificar sectores en disco.
+- BitLocker puede descifrar solo el sector solicitado, sin procesar el volumen completo.
+- Una escritura de sector puede completarse como una sola operación.
 
-¿Por qué es esto un problema para un esquema de encriptación de disco?
+**Agregar integridad es más difícil**
 
-¿Por qué es insuficiente hacer secure boot (verificar firmas en código)?
+- Cada sector cifrado necesitaría además un tag de autenticación.
+- Si el tag se guarda aparte, leer o escribir puede requerir I/O adicional.
+- Al escribir, texto cifrado y tag deben cambiar juntos: después de un crash no puede quedar uno nuevo y el otro antiguo.
 
----
-
-# Opciones para asegurar integridad
-
-Idealmente, almacenar un **MAC** (~hash con llave) para el sector en algún lugar del disco.
-
-Recordar, los discos escriben sectores a la vez: necesita un MAC por sector.
+Eso es **atomicidad**: actualizar ambos por completo, o no actualizar ninguno.
 
 ---
 
-# Problemas con almacenar MACs
+<!-- _class: lead -->
 
-* **Almacenar MAC en sector adyacente:** efectivamente corta espacio por factor de 2, y podría romper atomicidad si el disco falla entre 2 escrituras de sector.
-* **Almacenar MAC en tabla en otro lugar:** dos seeks (y rompe atomicidad).
-* **Almacenar MACs para grupo de sectores cerca:** rompe atomicidad.
+# Lo que BitLocker no garantiza
 
----
-
-# ¿Dónde almacenar MACs?
-
-* Comprar discos muy caros (NetApp, EMC) que tienen sectores jumbo.
-* Discos "Enterprise" tienen sectores de 520 bytes, en lugar del estándar 512.
-* Los 8 bytes extra usados para almacenar checksums, IDs de transacción, etc.
-* Podría usarse para almacenar MAC.
-* **No va a funcionar para máquinas comunes.**
+## Integridad · rollback · DMA/cold boot · kernel comprometido
 
 ---
 
-# Enfoque de Bitlocker: "Autenticación del Pobre"
+# Confidencialidad ≠ estado confiable
 
-Asumir que el adversario **no puede cambiar el ciphertext de manera "útil"**.
-
-Es decir, no puede tener un efecto predecible en el plaintext.
+![diagram](trusted-hardware-confidentiality-integrity.svg)
 
 ---
 
-# ¿Cuándo funcionaría o no la autenticación del pobre?
+# Integridad: el atacante puede escribir
 
-**Funciona si** las aplicaciones detectan o crashean cuando datos importantes están corruptos.
+El cifrado oculta plaintext, pero no necesariamente detecta cambios al ciphertext.
 
-Debe ser verdad a nivel de sector, que el atacante puede corromper separadamente.
+- Secure Boot solo cubre la cadena verificada/medida.
+- El volumen OS contiene datos que cambian continuamente.
+- Una modificación de sector puede corromper código, configuración o datos.
 
-**Probablemente verdad para código:** instrucciones aleatorias levantarán una excepción.
-
----
-
-# Peor caso para datos
-
-* 1 bit (ej., "¿requiere login?") solo en un sector.
-* El adversario puede adivinar ciphertexts aleatorios, ver cuándo ese bit cambia.
-* Si la aplicación no nota otros bits corruptos, game over.
-* Esperemos que el registro no esté construido así, entonces tal vez OK...
+**Ideal:** un MAC por sector, verificado antes de usar el plaintext.
 
 ---
 
-# ¿Cómo logra Bitlocker la autenticación del pobre?
+# MAC por sector: costos reales
 
-* Modificar el esquema de encriptación simétrica.
-* **Meta:** cambios localizados al ciphertext influencian el bloque completo.
-* Los esquemas existentes no tienen esta propiedad (ej., encriptar 128 bits a la vez).
-* Entonces, Bitlocker introduce un **paso de shuffling**; detalles no terriblemente relevantes aquí.
+- **Sector adyacente:** casi duplica espacio y requiere dos escrituras atómicas.
+- **Tabla separada:** agrega seeks/I/O y también rompe atomicidad ante fallas.
+- **MAC por grupo:** reduce overhead, pero actualiza datos y autenticador por separado.
+- Sectores “enterprise” de 520 bytes pueden guardar metadata; no eran opción común.
 
----
-
-# Ataques potenciales a BitLocker
-
-No pretende ser una solución de seguridad perfecta, por diseño.
-
-* **Ataques de hardware:** DMA, ataques cold boot, ...
-* **Vulnerabilidades de seguridad en Windows** (buffer overflows, acceso root).
-* **Revertir bloques de disco** a versión antigua (violar frescura).
-  * El adversario probablemente no tiene bloques antiguos interesantes.
-  * Difícil (costoso en términos de rendimiento) defenderse contra esto.
+El diseño sacrifica integridad fuerte para funcionar con discos convencionales.
 
 ---
 
-# Historial de seguridad de BitLocker
+# “Autenticación del pobre”
 
-No se han encontrado vulnerabilidades en el diseño hasta ahora (8+ años), módulo modelo de amenaza.
+BitLocker busca que alterar ciphertext no produzca un cambio **útil y predecible** en plaintext.
 
-Los ataques principalmente se enfocan en **extraer llave de la memoria del kernel de Windows**.
+- Un paso de *shuffling* difunde cambios dentro del sector.
+- Código aleatoriamente corrupto probablemente falla o levanta una excepción.
+- No equivale a un MAC: corrupción y manipulación siguen sin autenticarse.
 
----
-
-# Ataques de hardware a BitLocker
-
-* DMA vía dispositivos como Firewire.
-* Atacar interconexión entre CPU y TPM.
+**Supuesto:** las capas superiores detectan o colapsan ante datos importantes corruptos.
 
 ---
 
-# Ataques de software a BitLocker
+# El peor caso: un bit decisivo
 
-* Instalar un módulo de kernel como administrador; obtener dump de memoria.
-* Requiere primero bypasear control de acceso en Windows de alguna manera.
+Imagine un sector donde un bit significa **“¿requiere login?”**
 
-**Meta era aumentar costo del ataque, y BitLocker parece tener éxito en ello.**
-
----
-
-# Intel SGX: Protección más fuerte
-
-Ideas similares aparecen en Intel SGX para proteger memoria contra ataques físicos.
-
-* Encriptar contenidos de memoria.
-* También hacer autenticación y frescura "de verdad".
+- El atacante prueba ciphertexts modificados.
+- Observa cuándo cambia el comportamiento.
+- Si la aplicación ignora la corrupción restante, puede acertar un estado útil.
 
 ---
 
-# SGX: Ataques físicos subsumen ataques de software
+# Rollback, DMA y cold boot
 
-* SGX usa encriptación de memoria para también proteger contra OS comprometido.
-* El hardware provee un nuevo modo de ejecución llamado **"enclave"**.
-* La memoria del enclave se encripta, autentica.
-* Si el OS no confiable manipula memoria del enclave, es solo un caso especial de ataque físico.
+**Frescura / rollback**
+- Un sector cifrado antiguo puede seguir siendo un ciphertext válido.
+- BitLocker no mantiene versión autenticada por sector.
 
----
-
-# Alternativa a encriptación de sector: Encriptación a nivel de sistema de archivos
-
-Ej., ecryptfs en Linux, usado por encriptación de directorio home de Ubuntu.
-
-**Ventajas:**
-* FS puede resolver problemas de atomicidad/consistencia.
-* FS puede encontrar espacio para MACs extra, IVs aleatorios para prevenir reuso de IV, etc.
+**Extracción de llave**
+- DMA (por ejemplo, dispositivos de alta confianza) puede leer memoria.
+- Cold boot explota remanencia de DRAM tras apagar/reiniciar.
+- Atacar el enlace CPU–TPM puede observar o alterar la liberación.
 
 ---
 
-# Desventajas de encriptación a nivel de FS
+# Matriz de garantías
 
-* FS podría requerir mucho más código para ser "medido" en el TPM.
-  * FS aparece mucho más tarde en el proceso de boot.
-  * Requiere re-sellado del TPM para actualizaciones de FS, actualizaciones de drivers, etc.
-* FS podría no interponerse en swapping/paging.
-* FS más difícil de desplegar (cambios al FS, no se puede desplegar incrementalmente).
+| Propiedad | Resultado de BitLocker |
+|---|---|
+| Confidencialidad de disco robado | **Fuerte dentro del modelo** |
+| Arranque esperado antes de unseal | **Condicionado por PCR y supuestos HW** |
+| Integridad por sector | **No; mitigación probabilística** |
+| Frescura / anti-rollback | **No** |
+| Resistencia a DMA / cold boot | **No completa** |
+| Kernel de Windows comprometido | **Fuera de protección** |
 
----
-
-# Propiedades de seguridad deseadas
-
-¿Qué otras propiedades de seguridad podrían querer los usuarios de encriptación de memoria/disco?
 
 ---
 
-# Secreto de datos
+# Conclusión
 
-**El adversario que obtiene acceso al disco no puede obtener datos.**
+- El cifrado protege el disco; el TPM ayuda a custodiar la llave.
+- Secure Boot **bloquea**; Measured Boot **registra** y habilita políticas.
+- PCR + `unseal` liberan un secreto existente al arranque esperado.
+- BitLocker prioriza despliegue, rendimiento y uso transparente.
+- El precio: integridad débil, sin frescura y exposición tras entregar la llave a Windows.
 
-Bitlocker mayormente logra esto, módulo ser determinístico.
-
----
-
-# Integridad de datos
-
-**El adversario no puede reemplazar datos en disco sin detección.**
-
-Bitlocker depende de "autenticación del pobre".
+> Buen diseño de seguridad = garantía explícita + amenaza explícita + trade-off explícito.
 
 ---
 
-# Frescura de datos
+<!-- _class: lead -->
+# APPENDIX
 
-**El adversario no puede revertir a versión antigua sin detección.**
-
-Sin protección contra esto en Bitlocker.
-
-Funciona para su modelo de amenaza.
+## Extensiones y caminos secundarios
 
 ---
 
-# Resumen
+# Appendix · Attestation
 
-* **Hardware confiable** permite nuevas garantías de seguridad contra ataques físicos.
-* **TPM** proporciona measured boot y sellado de secretos basado en estado del sistema.
-* **Bitlocker** usa TPM para encriptación de disco transparente al usuario.
-* Trade-offs de diseño: integridad y frescura sacrificadas por rendimiento.
-* **SGX** proporciona garantías más fuertes pero con más complejidad.
+`TPM_quote(PCR, nonce)` firma mediciones y un desafío fresco.
+
+- El verificador remoto confía en la identidad del TPM.
+- El fabricante certifica la llave pública asociada.
+- El nonce evita reutilizar una respuesta vieja.
+- El verificador compara PCR con estados aceptables.
+
+**Diferencia:** `unseal` entrega un secreto local; attestation convence a un tercero.
 
 ---
 
-# Referencias
+# Appendix · Cuando el dueño no es confiable
 
-* Paper: "BitLocker Drive Encryption" - Microsoft
-* TPM 2.0 Library Specification: https://trustedcomputinggroup.org/
-* Intel SGX: https://www.intel.com/content/www/us/en/architecture-and-technology/software-guard-extensions.html
-* Chrome OS Verified Boot: https://www.chromium.org/chromium-os/chromiumos-design-docs/verified-boot
+La misma raíz de confianza sirve para políticas distintas:
+
+- **DRM:** verificar que el cliente ejecuta software que restringe copias.
+- **Cloud:** verificar VMM/bootloader antes de entregar secretos a una VM.
+- **Tarjetas inteligentes / appliances:** limitar operaciones aunque el entorno sea hostil.
+
+Aquí el dueño del dispositivo puede ser el adversario; el servicio remoto confía en el chip y las mediciones.
+
+---
+
+# Appendix · SGX: proteger aun del OS
+
+- Un **enclave** crea un dominio de ejecución aislado.
+- La memoria del enclave se cifra y autentica.
+- Un OS no confiable manipulando esa memoria se trata como atacante físico.
+- También requiere frescura para evitar reponer memoria antigua.
+
+**Garantía más fuerte que BitLocker**, a cambio de hardware, complejidad y una superficie distinta.
+
+---
+
+# Appendix · Cifrado a nivel de filesystem
+
+**Ventajas**
+- El FS puede reservar espacio para MACs e IV aleatorios.
+- Puede coordinar consistencia y atomicidad con su metadata.
+
+**Desventajas**
+- Mucho más código entra tarde en la cadena medida.
+- Actualizaciones de FS/drivers pueden exigir nuevas políticas.
+- Puede no cubrir swap/paging.
+- Es más difícil desplegar incrementalmente.
+
+---
+
+# Appendix · Tres propiedades separadas
+
+- **Secreto:** quien obtiene el disco no aprende los datos. BitLocker lo logra mayormente.
+- **Integridad:** reemplazar datos se detecta. BitLocker depende de “autenticación del pobre”.
+- **Frescura:** reponer una versión antigua se detecta. BitLocker no lo garantiza.
+
+Separarlas evita vender “disco cifrado” como sinónimo de “disco confiable”.
+
+---
+
+# Appendix · Referencias
+
+- Paper: **“BitLocker Drive Encryption”**, Microsoft.
+- TPM 2.0 Library Specification — Trusted Computing Group: https://trustedcomputinggroup.org/
+- Intel Software Guard Extensions: https://www.intel.com/content/www/us/en/architecture-and-technology/software-guard-extensions.html
+- Chrome OS Verified Boot: https://www.chromium.org/chromium-os/chromiumos-design-docs/verified-boot
+- Microsoft, Secure the Windows boot process: https://learn.microsoft.com/windows/security/
