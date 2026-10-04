@@ -54,8 +54,22 @@ style: |
 
 ---
 
+# Objetivos de esta clase
+  * Comparar procesos, contenedores y VMs como mecanismos de aislamiento
+  * Analizar los trade-offs de seguridad, rendimiento y funcionalidad al diseñar mecanismos de aislamiento
+  * Usar como caso de estudio Firecracker, utilizado para ejecutar funciones de AWS Lambda
+
+---
+
+# ¿Qué es AWS Lambda?
+  * Servicio de Function as a Service (FaaS): ejecuta código sin que el cliente administre servidores
+  * El cliente entrega una función y configura su runtime, memoria y eventos que la invocan
+  * AWS inicia instancias cuando llegan solicitudes y escala automáticamente según la carga
+  * El cliente paga por las invocaciones y el tiempo de ejecución
+
+---
+
 # Caso de estudio: Paper de Firecracker de Amazon
-  * Servicio Lambda: ejecutar aplicación Linux suministrada por el cliente, escalando según la carga
   * Desafío de seguridad: código arbitrario, necesita aislarlo de otros clientes
   * Desafío de rendimiento: la carga puede variar ampliamente
     * Podría ser mucho menos que una máquina (muchos clientes por máquina)
@@ -69,6 +83,7 @@ style: |
   * Contenedores, usando namespaces de Linux + cgroups
   * VMs
   * Runtimes de lenguaje (esto no lo veremos hoy)
+    * Ejecutan código dentro de un entorno controlado que restringe memoria y acceso al sistema (ej., JVM, V8 o WebAssembly)
 
 ---
 
@@ -81,71 +96,22 @@ style: |
 
 ---
 
-# Los contenedores Linux sirven dos propósitos
-  * Empaquetar software junto con todas las dependencias (bibliotecas, paquetes, archivos, etc)
-  * Aislamiento de seguridad y rendimiento para ejecutar ese software
-  * Ambos dependen de namespaces de Linux: abstracción de ejecutar en una máquina Linux separada
-  * El aislamiento de rendimiento usa cgroups de Linux para controlar el uso de recursos
-
----
-
-# ¿Por qué es desafiante el aislamiento en Linux?
-  * Mucho estado compartido ("recursos") en el kernel
-  * Las llamadas al sistema acceden al estado compartido nombrándolo
-    * PIDs
-    * Nombres de archivo
-    * Direcciones IP / puertos
-    * (Incluso IDs de usuario, en alguna forma)
-  * El control de acceso típico gira en torno a IDs de usuario (ej., permisos de archivo)
-    * Difícil usar eso para hacer cumplir aislamiento entre dos aplicaciones
-    * Muchos archivos con permisos
-    * Las aplicaciones crean archivos compartidos por accidente o a propósito (ej., world-writable)
-
----
-
-# Mecanismo Linux: chroot
-  * Vimos esto en OKWS
-  * Beneficio: limita los archivos que una aplicación puede nombrar
-    * No importa si la aplicación crea accidentalmente archivos world-writable
-  * Algunas limitaciones técnicas, pero un buen punto de partida para mejor aislamiento
-
----
-
-# Los namespaces proporcionan una forma de delimitar los recursos que se pueden nombrar
-  * [Quarkslab: Digging into Linux Namespaces](https://blog.quarkslab.com/digging-into-linux-namespaces-part-1.html)
-  * El proceso pertenece a un namespace particular (para cada tipo de namespace)
-    * Los nuevos procesos heredan el namespace del proceso padre
-  * Ej., el namespace PID limita los PIDs que un proceso puede nombrar
-  * Aislamiento de grano grueso, no sujeto a lo que la aplicación podría hacer
-  * Un chroot mejor diseñado para diferentes tipos de recursos (no solo sistema de archivos)
-
----
-
-# Cgroups de Linux
-  * Limitar / programar para uso de recursos
-  * Memoria, CPU, I/O de disco, I/O de red, etc
-  * Se aplica a procesos, similar a namespaces
-    * Los nuevos procesos heredan el cgroup del proceso padre
-  * No es un límite de seguridad, pero importante para prevenir ataques DoS
-    * Ej., un proceso o VM trata de monopolizar toda la CPU o memoria
-
----
-
-# Contenedores usando namespaces + cgroups
-  * Desempaquetar archivos del contenedor en algún lugar del sistema de archivos
-  * Asignar nuevo namespace para ejecutar contenedor
-  * Apuntar el directorio raíz del namespace del contenedor al árbol de archivos del contenedor
-  * Configurar cgroup para el contenedor basado en cualquier política de programación
-  * Configurar una interfaz de red virtual para el contenedor
-  * Ejecutar procesos en este contenedor
-    * Parece ejecutarse en un sistema Linux separado
-    * Su propio sistema de archivos, su propia interfaz de red, sus propios procesos (PIDs), etc
+# Aislamiento en contenedores Linux
+  * Los contenedores empaquetan software y sus dependencias, y aíslan su ejecución
+  * Los procesos siguen compartiendo el kernel y sus recursos
+  * Los namespaces restringen qué recursos puede ver y nombrar cada proceso
+    * Sistema de archivos, PIDs, red, usuarios, etc.
+  * Un mount namespace junto con pivot_root/chroot aísla el sistema de archivos
+  * Los cgroups limitan el consumo de CPU, memoria e I/O
+    * Ayudan a prevenir ataques DoS, pero no son un límite de seguridad
+  * Un runtime combina estas técnicas y ejecuta el proceso dentro del entorno resultante
 
 ---
 
 # ¿Por qué los namespaces no son suficientes para Lambda?
   * Kernel Linux compartido
-  * Superficie de ataque amplia: 300+ llamadas al sistema, muchas funciones especializadas bajo ioctl...
+  * Superficie de ataque amplia: cientos de llamadas al sistema, además de muchas operaciones especializadas mediante ioctl
+    * El número exacto depende de la arquitectura y versión del kernel
   * Gran cantidad de código, escrito en C
     * Los errores (buffer overflows, use-after-free, ...) continúan siendo descubiertos
     * No hay aislamiento dentro del kernel Linux mismo
@@ -155,40 +121,32 @@ style: |
 ---
 
 # Mecanismo de seguridad adicional: seccomp-bpf
-  * Idea: filtrar qué llamadas al sistema puede invocar un proceso
-  * Podría ayudarnos a abordar la amplia superficie de ataque del kernel Linux
-  * Patrón común señalado en el paper de Lambda:
-    * Los syscalls o características raramente usados son más propensos a tener errores
-  * Cada proceso está (opcionalmente) asociado con un filtro de llamadas al sistema
-    * Filtro escrito como un pequeño programa en el lenguaje bytecode BPF
-    * El kernel Linux ejecuta este filtro en cada invocación de syscall, antes de ejecutar el syscall
-    * El programa filtro puede decidir si el syscall debe ser permitido o no
-    * Puede mirar syscall#, argumentos, etc
-    * Los nuevos procesos heredan el filtro de syscall del proceso padre: "pegajoso"
-
----
-
-# Mecanismo de seguridad adicional: seccomp-bpf (cont.)
-  * Se puede usar seccomp-bpf para prevenir acceso a syscalls sospechosos
-  * Usado por algunas implementaciones de contenedores
-    * Configurar filtro bpf para deshabilitar llamadas al sistema sospechosas
-  * ¿Por qué esto no es suficiente para Lambda?
-    * Mal trade-off
-    * Comenzando a romper código de cliente que usa syscalls poco comunes
-    * Pero aún podría no ser suficiente para seguridad (mucho código/errores en syscalls comunes)
+  * Filtra qué llamadas al sistema puede invocar un proceso
+    * El kernel ejecuta un pequeño programa BPF antes de procesar cada syscall
+    * El filtro puede examinar el número de syscall y sus argumentos
+    * Los procesos hijos heredan el filtro
+  * Reduce la superficie de ataque bloqueando syscalls innecesarios o sospechosos
+  * ¿Por qué no es suficiente para Lambda?
+    * Bloquear syscalls poco comunes puede romper código legítimo del cliente
+    * Permitir syscalls comunes todavía expone una parte importante del kernel
 
 ---
 
 # Enfoque más pesado: VMs
   * Ejecutar Linux en una VM guest
   * ¿Por qué esto es mejor que Linux?
-    * Superficie de ataque más pequeña: no hay syscalls complejos, solo x86 + dispositivos virtuales
-    * Menos errores / vulnerabilidades: errores de escape de VM descubiertos menos de una vez al año
+    * Superficie de ataque más pequeña: no hay syscalls complejos, solo instrucciones de CPU y dispositivos virtuales
+    * Históricamente, menos vulnerabilidades de escape que en un kernel compartido
+      * Según los datos citados por el paper, se descubrían errores de escape de VM menos de una vez al año
   * ¿Por qué estos tampoco son suficientes para Lambda?
     * Alto costo de inicio: toma mucho tiempo arrancar la VM
     * Alto overhead: gran costo de memoria para cada VM en ejecución
     * Errores potenciales en el VMM mismo (qemu): 1.4M líneas de código C
   * Plan del paper: escribir un nuevo VMM, pero seguir usando KVM
+
+---
+
+![bg contain](containers-vs-vms.svg)
 
 ---
 
@@ -209,30 +167,34 @@ style: |
 ---
 
 # Linux KVM
+  * Subsistema del kernel Linux para virtualización asistida por hardware
+  * Expone `/dev/kvm`, utilizado por un VMM en user space
+  * Gestiona vCPUs, memoria guest y ejecución de código virtualizado
+  * No implementa una VM completa
+    * El VMM todavía debe proporcionar dispositivos, arranque y administración
   * [Documentación oficial de la API de KVM](https://www.kernel.org/doc/html/latest/virt/kvm/api.html)
-  * Abstracción para usar soporte de hardware para virtualización
-  * Gestiona CPUs virtuales, memoria virtual
 
 ---
 
 # QEMU
-  * Implementa dispositivos virtuales, similar a lo que tendría el hardware real
+  * Implementa dispositivos virtuales similares al hardware real
   * También implementa dispositivos puramente virtuales (virtio)
-    * Interfaz bien definida a través de regiones de memoria compartida
-  * También implementa emulación de instrucciones de CPU
-    * Principalmente no necesario cuando se usa soporte de hardware
-    * Pero aún usado para instrucciones que el hardware no soporta nativamente
-    * Ej., CPUID, INVD, ..
-    * [VM Exits, Interrupts & CPUID Emulation](https://revers.engineering/day-5-vmexits-interrupts-cpuid-emulation/)
-  * También proporciona alguna implementación de BIOS para comenzar a ejecutar la VM
+    * Interfaces estandarizadas basadas en memoria compartida
+  * Puede ejecutar la CPU guest de dos maneras:
+    * Emulación por software (TCG): traduce instrucciones y permite ejecutar una arquitectura distinta a la del host
+    * Virtualización por hardware (KVM): la mayoría de las instrucciones se ejecutan directamente en la CPU
+      * Operaciones sensibles producen un VM exit y son manejadas por KVM o QEMU
+  * Proporciona mecanismos para iniciar la VM
+    * Puede cargar firmware como SeaBIOS u OVMF, o iniciar un kernel directamente
+      * SeaBIOS implementa el BIOS tradicional; OVMF implementa UEFI
 
 ---
 
 # Diseño de Firecracker
   * Usar KVM para CPU virtual y memoria
-  * Re-implementar QEMU
-  * Soportar conjunto mínimo de dispositivos
-    * virtio network, virtio block (disco), teclado, serie
+  * Implementar un VMM mínimo y especializado en lugar de usar QEMU
+  * Soportar un conjunto mínimo de dispositivos
+    * virtio network, virtio block (disco), teclado y puerto serie
   * Dispositivos de bloque en lugar de sistema de archivos: límite de aislamiento más fuerte
     * El sistema de archivos tiene estado complejo
       * Directorios, archivos de longitud variable, symlinks / hardlinks
@@ -246,27 +208,39 @@ style: |
 ---
 
 # Diseño de Firecracker (cont.)
-  * No soportar emulación de instrucciones
-    * (Excepto instrucciones necesarias como CPUID, VMCALL/VMEXIT, ..)
+  * No incluir un emulador general de CPU
+    * Las instrucciones guest se ejecutan directamente en el procesador mediante KVM
+    * Algunas operaciones sensibles producen VM exits manejados por KVM o el VMM
   * No soportar BIOS en absoluto
     * Solo cargar el kernel en la VM en la inicialización y comenzar a ejecutarlo
 
 ---
 
+![bg contain](firecracker-stack.svg)
+
+---
+
 # Implementación de Firecracker: Rust
   * Lenguaje memory-safe (módulo código "unsafe")
-  * 50K líneas de código: mucho más pequeño que QEMU
+  * Al momento del paper: aproximadamente 50K líneas de código, mucho menos que QEMU
   * Hace improbable que la implementación VMM tenga errores como buffer overflows
   * [Repositorio de Firecracker en GitHub](https://github.com/firecracker-microvm/firecracker)
 
 ---
 
-# El VMM de Firecracker se ejecuta en un proceso "encarcelado"
-  * chroot para limitar archivos que el VMM puede acceder
-  * namespaces para limitar el VMM de acceder a otros procesos y red
-  * ejecutándose como un ID de usuario separado
-  * seccomp-bpf para limitar qué llamadas al sistema puede invocar el VMM
-  * Todo para asegurar que, si se explotan errores en el VMM, es difícil escalar el ataque
+# Aislamiento del proceso VMM: el jailer
+  * Firecracker incluye un programa separado llamado jailer
+    * Configura el aislamiento antes de ejecutar el proceso VMM
+  * Crea un mount namespace y usa pivot_root/chroot para restringir el sistema de archivos visible
+  * Ejecuta el VMM con un usuario y grupo sin privilegios
+  * Puede configurar cgroups y límites de recursos
+  * Los namespaces de red y PID son opcionales
+  * Firecracker instala filtros seccomp-bpf para limitar las llamadas al sistema permitidas
+  * Defensa en profundidad: si se explota un error del VMM, estas capas dificultan escalar el ataque
+
+---
+
+![bg contain](jailer-defense-in-depth.svg)
 
 ---
 
@@ -279,49 +253,68 @@ style: |
 
 ---
 
-# ¿Qué tan bien logra Firecracker sus objetivos?
-  * El overhead parece bastante bajo
-    * 3MB overhead de memoria por VM inactiva
-    * 125msec tiempo de arranque
-  * El rendimiento parece OK
-    * El rendimiento de CPU es básicamente KVM (así que, sin cambios)
-    * El rendimiento de I/O de dispositivos no es tan bueno
-      * Disco virtual lento: necesita concurrencia
-      * Red virtual lenta: necesita PCI pass-through
+![bg contain](lambda-firecracker-architecture.svg)
+
+---
+
+# Evaluación de Firecracker en el paper (2020)
+  * Overhead bajo
+    * 3MB de overhead de memoria por VM inactiva
+    * 125ms de tiempo de arranque
+  * Rendimiento de CPU cercano a KVM
+  * Limitaciones de I/O observadas en la versión evaluada
+    * El disco virtual requería mayor concurrencia para mejorar su rendimiento
+    * La red virtual era más lenta; el paper menciona PCI passthrough como posible optimización
 
 ---
 
 # ¿Qué tan bien logra Firecracker sus objetivos? (cont.)
   * Seguridad probablemente bastante buena
-    * Implementación Rust: menos propenso a errores
-    * Mucho menos código en el VMM
-    * Proceso VMM encarcelado
-    * Linux KVM aún parte del TCB, pero mucho más pequeño que QEMU
-    * Aún así, los errores de KVM socavarían el aislamiento de Firecracker
-      * [Google Project Zero: An EPYC Escape - KVM Vulnerability Case Study](https://googleprojectzero.blogspot.com/2021/06/an-epyc-escape-case-study-of-kvm.html)
+    * Implementación en Rust: menos propensa a errores de memoria
+    * VMM y modelo de dispositivos mucho más pequeños que los de QEMU
+    * Capas adicionales de aislamiento mediante el jailer
+  * KVM y el kernel del host todavía forman parte del Trusted Computing Base (TCB)
+    * Una vulnerabilidad en KVM podría romper el aislamiento de Firecracker
+    * [Google Project Zero: An EPYC Escape - KVM Vulnerability Case Study](https://googleprojectzero.blogspot.com/2021/06/an-epyc-escape-case-study-of-kvm.html)
+
+---
+
+# ¿Qué ha cambiado desde la publicación del paper?
+  * Firecracker ahora soporta x86_64 y ARM de 64 bits (aarch64)
+  * El conjunto de dispositivos virtuales se ha expandido
+    * Incluye vsock, balloon y virtio-rng, entre otros
+  * Soporte opcional para virtio-pci
+    * Mejora el rendimiento de I/O sin entregar un dispositivo físico directamente a la VM
+  * La implementación ha crecido desde aproximadamente 50K a más de 120K líneas de Rust
+    * Sigue siendo considerablemente menor que QEMU, que supera los 2.4M de líneas de C y headers
 
 ---
 
 # Algunos errores encontrados en Firecracker
-  * [Issue #1462: Memory bounds-checking vulnerability](https://github.com/firecracker-microvm/firecracker/issues/1462)
-    * Problema de verificación de límites de memoria, a pesar de estar escrito en Rust
-  * [Issue #2057: Network interface DoS bug](https://github.com/firecracker-microvm/firecracker/issues/2057)
-    * Error DoS en interfaz de red
-  * [Issue #2177: Unbounded serial console buffer](https://github.com/firecracker-microvm/firecracker/issues/2177)
-    * El buffer de consola serie creció sin límite
-    * Podría causar que una VM use mucha memoria a través del proceso Firecracker
+  * [Issue #1462: error de límites en vsock](https://github.com/firecracker-microvm/firecracker/issues/1462)
+    * Descriptores creados por un guest malicioso permitían leer o escribir fuera de su memoria, en el heap del proceso VMM
+    * Podía causar un crash y no se descartaba ejecución de código dentro del proceso Firecracker
+  * [Issue #2057: denegación de servicio en virtio-net](https://github.com/firecracker-microvm/firecracker/issues/2057)
+    * Tráfico de entrada intenso podía llenar las colas y congelar permanentemente la interfaz de red de la microVM
+  * [Issue #2177: buffer sin límite en la consola serie](https://github.com/firecracker-microvm/firecracker/issues/2177)
+    * Entrada enviada rápidamente al stdin de Firecracker podía agotar la memoria del host si el proceso no tenía límites
+  * Lección: Rust reduce errores de memoria, pero no elimina errores lógicos o de gestión de recursos
 
 ---
 
-# Firecracker usado fuera de Lambda
+# Firecracker fuera de AWS: Fly.io
+  * Fly.io ejecuta aplicaciones de clientes sobre servidores físicos compartidos y distribuidos geográficamente
+  * Usar solo contenedores dejaría a distintos clientes compartiendo el mismo kernel del host
+    * Una vulnerabilidad LPE del kernel podría romper el aislamiento entre clientes
+  * Fly.io adoptó Firecracker para ejecutar cada workload dentro de una microVM con su propio kernel guest
+  * Obtiene una barrera de VM más fuerte, manteniendo tiempos de inicio y overhead compatibles con workloads de contenedores
   * [Fly.io: Sandboxing and Workload Isolation](https://fly.io/blog/sandboxing-and-workload-isolation/)
 
 ---
 
 # Resumen
-  * El aislamiento es un bloque de construcción clave para la seguridad (una vez más)
-  * Desafiante lograr aislamiento junto con otros objetivos:
-    * Alto rendimiento
-    * Overheads bajos (memoria, cambio de contexto, etc)
-    * Compatibilidad con sistemas existentes (ej., Linux)
-  * Caso de estudio del mundo real de ingeniería de un mecanismo de aislamiento
+  * Los mecanismos de aislamiento ofrecen distintos trade-offs de seguridad, rendimiento y compatibilidad
+  * Los contenedores son livianos, pero comparten el kernel del host
+  * Las VMs ofrecen una frontera más fuerte, pero tradicionalmente tienen mayor overhead
+  * Firecracker reduce ese overhead mediante KVM, un VMM mínimo y un conjunto limitado de dispositivos
+  * Rust y el jailer agregan defensa en profundidad, pero KVM y el kernel del host siguen siendo parte del TCB
