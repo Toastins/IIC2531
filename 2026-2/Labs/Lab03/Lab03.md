@@ -532,5 +532,5 @@ no modificada durante la calificación.
 >También deberías asegurarte de que tu código aún pase todas las pruebas usando `make check`, que usa los binarios de laboratorio no modificados.
 
 ¡Has terminado!
-Entrega tus respuestas a la tarea de laboratorio ejecutando prepare-submit y subiendo el archivo resultante
-lab1-handin.tar.gz al buzón de la tarea.
+Entrega tus respuestas a la tarea de laboratorio ejecutando `make prepare-submit` y subiendo el archivo resultante
+`lab1-handin.tar.gz` al buzón de la tarea.
